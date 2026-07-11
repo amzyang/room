@@ -34,6 +34,7 @@ brews:
       owner: amzyang
       name: homebrew-tap
       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    directory: Formula
     homepage: https://github.com/amzyang/room
     description: Meeting room booking automation CLI for Feishu (Lark)
     install: |

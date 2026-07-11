@@ -39,24 +39,22 @@ func newConfigCmd(a *app) *cobra.Command {
 
 func newConfigSetCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:   "set KEY VALUE",
-		Short: "写入一项配置到 config.toml",
-		Args:  cobra.ExactArgs(2),
+		Use:   "set KEY [VALUE]",
+		Short: "写入一项配置到 config.toml（booking.room_level_id 省略 VALUE 时交互选择）",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			it, err := config.Lookup(args[0])
 			if err != nil {
 				return err
 			}
-			val, err := it.Normalize(args[1])
-			if err != nil {
-				return err
+			if len(args) == 1 {
+				if it.EnvKey != "ROOM_LEVEL_ID" {
+					return fmt.Errorf("set %s 缺少 VALUE（仅 booking.room_level_id 支持省略 VALUE 交互选择）", it.TOMLKey())
+				}
+				return runConfigPickRoomLevel(cmd, a)
 			}
-			doc, err := config.ReadFile(a.cfg.Path)
+			val, err := setConfigValue(a, it, args[1])
 			if err != nil {
-				return fmt.Errorf("读取 %s 失败: %w", a.cfg.Path, err)
-			}
-			doc.Values[it.EnvKey] = val
-			if err := config.WriteFile(a.cfg.Path, doc); err != nil {
 				return err
 			}
 			display := val
@@ -68,6 +66,23 @@ func newConfigSetCmd(a *app) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// setConfigValue 规范化 raw 并写入 config.toml，返回写入的规范值。
+func setConfigValue(a *app, it config.Item, raw string) (string, error) {
+	val, err := it.Normalize(raw)
+	if err != nil {
+		return "", err
+	}
+	doc, err := config.ReadFile(a.cfg.Path)
+	if err != nil {
+		return "", fmt.Errorf("读取 %s 失败: %w", a.cfg.Path, err)
+	}
+	doc.Values[it.EnvKey] = val
+	if err := config.WriteFile(a.cfg.Path, doc); err != nil {
+		return "", err
+	}
+	return val, nil
 }
 
 // warnOverride 写入 TOML 后，若该 key 当前被更高层（shell env）覆盖则提醒，

@@ -67,7 +67,7 @@ var Registry = []Item{
 	{EnvKey: "ROOM_EXCLUDE_LIST", Section: "booking", Key: "room_exclude_list", Type: TypeList,
 		Desc: "排除包含以下关键词的会议室"},
 	{EnvKey: "ROOM_LEVEL_ID", Section: "booking", Key: "room_level_id", Type: TypeString,
-		Desc: "会议室层级 ID(配置后按层级+楼层顺序查找会议室)"},
+		Desc: "会议室层级 ID(配置后按层级+楼层顺序查找会议室;room config set booking.room_level_id 可交互选择)"},
 	{EnvKey: "ROOM_SIZE", Section: "booking", Key: "room_size", Type: TypeInt, Default: "0",
 		Desc: "会议室最大容量限制(0 为不限制)"},
 	{EnvKey: "TASK_FORMAT", Section: "booking", Key: "task_format", Type: TypeString, Multiline: true,

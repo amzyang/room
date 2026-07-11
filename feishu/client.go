@@ -140,8 +140,14 @@ func (a *API) SearchRooms(ctx context.Context) ([]Room, error) {
 	return rooms, nil
 }
 
+// GetRoomLevelChildren 查询 parentID 的子层级;parentID 为空时返回租户根层级列表
+// (空字符串参数会被飞书以 param error 拒绝,必须整个省略)。
 func (a *API) GetRoomLevelChildren(ctx context.Context, parentID string) ([]RoomLevel, error) {
-	req := larkvc.NewListRoomLevelReqBuilder().RoomLevelId(parentID).PageSize(100).Build()
+	builder := larkvc.NewListRoomLevelReqBuilder().PageSize(100)
+	if parentID != "" {
+		builder = builder.RoomLevelId(parentID)
+	}
+	req := builder.Build()
 	resp, err := a.lark.Vc.V1.RoomLevel.List(ctx, req)
 	if err != nil {
 		return nil, err

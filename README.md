@@ -70,6 +70,7 @@ room login   # 完成用户授权
 ```bash
 room config list                      # 全部配置项的生效值与来源（secret 掩码）
 room config set feishu.app_id cli_x   # 写入全局配置（KEY 也接受环境变量名 FEISHU_APP_ID）
+room config set booking.room_level_id # 省略 VALUE：拉取飞书会议室层级树，多级下钻交互选择
 room config get TASK_OWNER            # 打印生效值（--source 附加来源）
 room config unset booking.room_size   # 从全局配置删除
 room config path                      # 打印全局配置文件路径

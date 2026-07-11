@@ -7,13 +7,17 @@ import (
 	_ "time/tzdata"
 
 	sentry "github.com/getsentry/sentry-go"
-	"github.com/joho/godotenv"
+
+	"github.com/amzyang/room/config"
 )
 
 func main() {
-	_ = godotenv.Load()
+	resolved := config.Bootstrap(".env", config.DefaultPath())
+	if resolved.Warning != "" {
+		fmt.Fprintln(os.Stderr, "警告: "+resolved.Warning)
+	}
 
-	err := newRootCmd().Execute()
+	err := newRootCmd(resolved).Execute()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		sentry.CaptureException(err)

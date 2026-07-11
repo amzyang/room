@@ -33,11 +33,11 @@ func UpsertEnvFile(path string, pairs []EnvPair) error {
 	for _, pair := range pairs {
 		content = upsertEnvLine(content, pair)
 	}
-	return writeFileAtomic(path, []byte(content), mode)
+	return WriteFileAtomic(path, []byte(content), mode)
 }
 
-// writeFileAtomic 同目录临时文件 + rename：写入中断（kill/断电/磁盘满）不会把原文件截断。
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+// WriteFileAtomic 同目录临时文件 + rename：写入中断（kill/断电/磁盘满）不会把原文件截断。
+func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp*")
 	if err != nil {
 		return err

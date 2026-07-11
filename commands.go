@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/logx"
 )
 
@@ -16,10 +17,11 @@ type app struct {
 	log   *slog.Logger
 	loc   *time.Location
 	now   func() time.Time
+	cfg   *config.Resolved // Bootstrap 产物：生效配置与来源，config 命令族用
 }
 
-func newRootCmd() *cobra.Command {
-	a := &app{}
+func newRootCmd(cfg *config.Resolved) *cobra.Command {
+	a := &app{cfg: cfg}
 
 	root := &cobra.Command{
 		Use:           "room",
@@ -44,6 +46,7 @@ func newRootCmd() *cobra.Command {
 		newBookCmd(a),
 		newListCmd(a),
 		newCancelCmd(a),
+		newConfigCmd(a),
 		newInitCmd(a),
 		newLoginCmd(a),
 		newNotifyCmd(a),

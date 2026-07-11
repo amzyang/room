@@ -38,5 +38,6 @@ brews:
     description: Meeting room booking automation CLI for Feishu (Lark)
     install: |
       bin.install "room"
+      generate_completions_from_executable(bin/"room", "completion")
     test: |
       system "#{bin}/room --version"

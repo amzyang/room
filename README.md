@@ -78,6 +78,9 @@ room login   # 完成用户授权
 `TIANAPI_KEY`（节假日过滤）、`SENTRY_DSN`（错误上报）、`OPENAI_API_KEY`（NLP）。
 完整说明见 [.env.example](.env.example)。
 
+Sentry DSN 优先级：`--sentry-dsn` flag > `SENTRY_DSN` 环境变量 > release 二进制编译内置。
+显式设空（`--sentry-dsn=""` 或 `SENTRY_DSN=`）则完全禁用错误上报。
+
 ### TASK_FORMAT
 
 ```

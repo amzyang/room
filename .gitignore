@@ -1,0 +1,7 @@
+.env
+.cache/
+room
+dist/
+*.log
+plans/
+.DS_Store

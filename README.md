@@ -45,9 +45,12 @@ room list -d 7
 ### 一键创建个人应用（推荐）
 
 ```bash
-room init    # 浏览器确认后自动创建 PersonalAgent 个人应用，凭证写入 .env
+room init    # 浏览器确认后自动创建 PersonalAgent 个人应用并写入凭证
 room login   # 完成用户授权
 ```
+
+凭证写入位置：当前目录已有 `.env` 时写 `.env`（老部署行为不变），
+否则写全局 `~/.config/room/config.toml`。
 
 `room init` 通过匿名 OAuth 设备码流程自动创建飞书 PersonalAgent 个人应用，
 免去手动去开发者后台建应用、导权限。三种模式：
@@ -63,9 +66,32 @@ room login   # 完成用户授权
 注意：注册端点为未公开接口（考证自 lark-cli），仅支持飞书国内域
 （Lark 海外租户不支持）；如自动创建失败或遇权限报错，请退回下面的手动方式。
 
-### 手动配置
+### 配置管理（room config）
 
-复制 `.env.example` 为 `.env` 并填写。必填项：
+```bash
+room config list                      # 全部配置项的生效值与来源（secret 掩码）
+room config set feishu.app_id cli_x   # 写入全局配置（KEY 也接受环境变量名 FEISHU_APP_ID）
+room config get TASK_OWNER            # 打印生效值（--source 附加来源）
+room config unset booking.room_size   # 从全局配置删除
+room config path                      # 打印全局配置文件路径
+```
+
+全局配置文件为 `~/.config/room/config.toml`（`$XDG_CONFIG_HOME` 优先，
+或用 `ROOM_CONFIG` 环境变量显式指定路径），由 `room config` 管理，
+配好后可在任意目录运行 room。配置优先级从高到低：
+
+1. shell 环境变量
+2. 当前目录 `.env`
+3. `~/.config/room/config.toml`
+4. 内置默认值
+
+「改了不生效」时用 `room config list` 查看每项的实际来源；`set` 写入的项
+若被更高层覆盖会当场提示。
+
+### 手动配置（.env）
+
+也可复制 `.env.example` 为 `.env` 放在运行目录（优先级高于全局配置，
+Docker 部署即用此方式）。必填项：
 
 | 变量 | 说明 |
 |---|---|
@@ -78,8 +104,9 @@ room login   # 完成用户授权
 `TIANAPI_KEY`（节假日过滤）、`SENTRY_DSN`（错误上报）、`OPENAI_API_KEY`（NLP）。
 完整说明见 [.env.example](.env.example)。
 
-Sentry DSN 优先级：`--sentry-dsn` flag > `SENTRY_DSN` 环境变量 > release 二进制编译内置。
-显式设空（`--sentry-dsn=""` 或 `SENTRY_DSN=`）则完全禁用错误上报。
+Sentry DSN 优先级：`--sentry-dsn` flag > `SENTRY_DSN` 环境变量（含 `.env`/config.toml）>
+release 二进制编译内置。显式设空（`--sentry-dsn=""`、`SENTRY_DSN=` 或
+`room config set sentry.dsn ""`）则完全禁用错误上报。
 
 ### TASK_FORMAT
 

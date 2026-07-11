@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/amzyang/room/booking"
+	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/envutil"
 	"github.com/amzyang/room/feishu"
 	"github.com/amzyang/room/nlp"
@@ -135,12 +136,13 @@ type initOptions struct {
 }
 
 // newInitCmd 构造 init 命令：匿名 device flow 自动创建飞书 PersonalAgent 个人应用
-// 并把凭证写入 .env，替代去开放平台手动建应用抄 app_id/app_secret。
+// 并把凭证写入配置（CWD 有 .env 写 .env，否则写全局 config.toml），
+// 替代去开放平台手动建应用抄 app_id/app_secret。
 func newInitCmd(a *app) *cobra.Command {
 	opts := initOptions{}
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "一键自动创建飞书 PersonalAgent 个人应用并把凭证写入 .env",
+		Short: "一键自动创建飞书 PersonalAgent 个人应用并把凭证写入配置",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// agent 脚本取值失败易传出空串，静默降级为全新注册会白等一轮授权
 			if cmd.Flags().Changed("device-code") && opts.deviceCode == "" {
@@ -193,7 +195,7 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 
 	code, err := reg.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("自动创建应用失败（%w）。可改用手动方式：在 open.feishu.cn 创建应用并把凭证填入 .env", err)
+		return fmt.Errorf("自动创建应用失败（%w）。可改用手动方式：在 open.feishu.cn 创建应用后用 room config set 写入凭证", err)
 	}
 
 	// 发起-即返回模式：打印设备码供后续 --device-code 恢复，不阻塞轮询
@@ -215,17 +217,47 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 	return a.finishInit(ctx, creds, oldAppID, oldAppSecret, tokenPath, shellOverride, opts.jsonOut)
 }
 
-// finishInit 注册成功后的收尾：写 .env → 撤销旧应用登录凭证 → 提示 shell 覆盖风险。
+// finishInit 注册成功后的收尾：写凭证 → 撤销旧应用登录凭证 → 提示覆盖风险。
 // 先落盘再撤销：写入失败时保留旧登录态，避免「新应用已创建、旧登录又被销毁」的双输局面。
 func (a *app) finishInit(ctx context.Context, creds *feishu.AppCredentials, oldAppID, oldAppSecret, tokenPath string, shellOverride, jsonOut bool) error {
-	if err := saveAppCredentials(os.Stdout, envFilePath, creds, jsonOut); err != nil {
+	dest := pickCredentialsDest(fileExists(envFilePath), envFilePath, a.cfg.Path)
+	if err := saveAppCredentials(os.Stdout, dest, creds, jsonOut); err != nil {
 		return err
 	}
 	a.revokeOldLoginBestEffort(ctx, oldAppID, oldAppSecret, tokenPath)
-	if shellOverride {
-		a.log.Warn("检测到 shell 环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 将覆盖 .env，请 unset 后再运行 room login")
+	if dest.kind == "env" {
+		if shellOverride {
+			a.log.Warn("检测到 shell 环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 将覆盖 .env，请 unset 后再运行 room login")
+		}
+		return nil
+	}
+	// 写 TOML 时 shell env 会压过写入值（此分支下 CWD 无 .env，无需查 .env 层）
+	for _, key := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"} {
+		if src := a.cfg.OverrideOf(key); src != config.SourceUnset {
+			a.log.Warn(fmt.Sprintf("检测到 %s 来自 %s，将覆盖新写入的配置，请移除后再运行 room login", key, src))
+		}
 	}
 	return nil
+}
+
+// credentialsDest 应用凭证的写入目标。
+type credentialsDest struct {
+	kind string // "env" | "toml"
+	path string
+}
+
+// pickCredentialsDest CWD 已有 .env 则继续写 .env（老用户与 Docker 目录级部署行为不变）；
+// 否则写全局 config.toml，新用户不再在随机目录留下孤儿 .env。
+func pickCredentialsDest(envExists bool, envPath, tomlPath string) credentialsDest {
+	if envExists {
+		return credentialsDest{kind: "env", path: envPath}
+	}
+	return credentialsDest{kind: "toml", path: tomlPath}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // validateInitOptions 校验互斥的 flag 组合。
@@ -313,15 +345,21 @@ func emitAppRegistration(w io.Writer, code *feishu.AppRegistrationCode, asJSON, 
 	}
 }
 
-// saveAppCredentials 把注册到的应用凭证写入 .env 并输出结果；stdout 绝不打印明文 secret。
-func saveAppCredentials(w io.Writer, envPath string, creds *feishu.AppCredentials, asJSON bool) error {
-	err := envutil.UpsertEnvFile(envPath, []envutil.EnvPair{
-		{Key: "FEISHU_APP_ID", Value: creds.AppID},
-		{Key: "FEISHU_APP_SECRET", Value: creds.AppSecret},
-	})
+// saveAppCredentials 把注册到的应用凭证写入 dest（.env 或全局 config.toml）并输出结果；
+// stdout 绝不打印明文 secret。
+func saveAppCredentials(w io.Writer, dest credentialsDest, creds *feishu.AppCredentials, asJSON bool) error {
+	var err error
+	if dest.kind == "toml" {
+		err = saveCredsTOML(dest.path, creds)
+	} else {
+		err = envutil.UpsertEnvFile(dest.path, []envutil.EnvPair{
+			{Key: "FEISHU_APP_ID", Value: creds.AppID},
+			{Key: "FEISHU_APP_SECRET", Value: creds.AppSecret},
+		})
+	}
 	if err != nil {
 		// 此时应用已在飞书侧创建，app_id 可打印（非机密），secret 只能去开发者后台找回
-		return fmt.Errorf("写入 %s 失败: %w（新应用 %s 已创建，app_secret 可在 open.feishu.cn 开发者后台查看）", envPath, err, creds.AppID)
+		return fmt.Errorf("写入 %s 失败: %w（新应用 %s 已创建，app_secret 可在 open.feishu.cn 开发者后台查看）", dest.path, err, creds.AppID)
 	}
 
 	if asJSON {
@@ -330,13 +368,25 @@ func saveAppCredentials(w io.Writer, envPath string, creds *feishu.AppCredential
 			AppID       string `json:"app_id"`
 			OpenID      string `json:"open_id"`
 			TenantBrand string `json:"tenant_brand"`
-			EnvPath     string `json:"env_path"`
-		}{"app_registered", creds.AppID, creds.OpenID, creds.TenantBrand, envPath})
+			EnvPath     string `json:"env_path"` // 兼容字段：历史消费者按此取写入路径，含义由 dest 指明
+			Dest        string `json:"dest"`     // "env" | "toml"
+		}{"app_registered", creds.AppID, creds.OpenID, creds.TenantBrand, dest.path, dest.kind})
 		return nil
 	}
-	fmt.Fprintf(w, "\n应用创建成功！app_id: %s（app_secret 已写入 %s，不在终端显示）\n", creds.AppID, envPath)
+	fmt.Fprintf(w, "\n应用创建成功！app_id: %s（app_secret 已写入 %s，不在终端显示）\n", creds.AppID, dest.path)
 	fmt.Fprintln(w, "请运行 room login 完成用户授权")
 	return nil
+}
+
+// saveCredsTOML 凭证写入全局 config.toml（保留文件中其他配置项）。
+func saveCredsTOML(path string, creds *feishu.AppCredentials) error {
+	doc, err := config.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	doc.Values["FEISHU_APP_ID"] = creds.AppID
+	doc.Values["FEISHU_APP_SECRET"] = creds.AppSecret
+	return config.WriteFile(path, doc)
 }
 
 func printJSON(w io.Writer, v any) {

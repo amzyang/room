@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/feishu"
 )
 
@@ -148,13 +149,23 @@ func TestEmitAppRegistrationText(t *testing.T) {
 	}
 }
 
+func TestPickCredentialsDest(t *testing.T) {
+	if d := pickCredentialsDest(true, ".env", "/g/config.toml"); d.kind != "env" || d.path != ".env" {
+		t.Errorf("CWD 有 .env 应继续写 .env: %+v", d)
+	}
+	if d := pickCredentialsDest(false, ".env", "/g/config.toml"); d.kind != "toml" || d.path != "/g/config.toml" {
+		t.Errorf("CWD 无 .env 应写全局 TOML: %+v", d)
+	}
+}
+
 func TestSaveAppCredentials(t *testing.T) {
 	creds := &feishu.AppCredentials{AppID: "cli_new", AppSecret: "sec_new", OpenID: "ou_1", TenantBrand: "feishu"}
+	envDest := func(path string) credentialsDest { return credentialsDest{kind: "env", path: path} }
 
 	t.Run("文本模式", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), ".env")
 		var buf bytes.Buffer
-		if err := saveAppCredentials(&buf, path, creds, false); err != nil {
+		if err := saveAppCredentials(&buf, envDest(path), creds, false); err != nil {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(path)
@@ -174,10 +185,36 @@ func TestSaveAppCredentials(t *testing.T) {
 		}
 	})
 
+	t.Run("TOML 模式保留已有配置", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		doc := config.NewDocument()
+		doc.Values["TASK_OWNER"] = "keepme"
+		if err := config.WriteFile(path, doc); err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := saveAppCredentials(&buf, credentialsDest{kind: "toml", path: path}, creds, false); err != nil {
+			t.Fatal(err)
+		}
+		got, err := config.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Values["FEISHU_APP_ID"] != "cli_new" || got.Values["FEISHU_APP_SECRET"] != "sec_new" {
+			t.Errorf("凭证未写入 TOML: %v", got.Values)
+		}
+		if got.Values["TASK_OWNER"] != "keepme" {
+			t.Errorf("已有配置项被覆盖丢失: %v", got.Values)
+		}
+		if strings.Contains(buf.String(), "sec_new") {
+			t.Errorf("文本输出泄漏 secret:\n%s", buf.String())
+		}
+	})
+
 	t.Run("写入失败时错误含 app_id 找回指引", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "no-such-dir", ".env")
 		var buf bytes.Buffer
-		err := saveAppCredentials(&buf, path, creds, false)
+		err := saveAppCredentials(&buf, envDest(path), creds, false)
 		if err == nil {
 			t.Fatal("want error")
 		}
@@ -192,7 +229,7 @@ func TestSaveAppCredentials(t *testing.T) {
 	t.Run("JSON 模式", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), ".env")
 		var buf bytes.Buffer
-		if err := saveAppCredentials(&buf, path, creds, true); err != nil {
+		if err := saveAppCredentials(&buf, envDest(path), creds, true); err != nil {
 			t.Fatal(err)
 		}
 		var got map[string]any
@@ -205,6 +242,7 @@ func TestSaveAppCredentials(t *testing.T) {
 			"open_id":      "ou_1",
 			"tenant_brand": "feishu",
 			"env_path":     path,
+			"dest":         "env",
 		}
 		for k, v := range want {
 			if got[k] != v {
@@ -213,6 +251,21 @@ func TestSaveAppCredentials(t *testing.T) {
 		}
 		if strings.Contains(buf.String(), "sec_new") {
 			t.Errorf("JSON 事件泄漏 secret:\n%s", buf.String())
+		}
+	})
+
+	t.Run("JSON 模式 TOML dest", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		var buf bytes.Buffer
+		if err := saveAppCredentials(&buf, credentialsDest{kind: "toml", path: path}, creds, true); err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+			t.Fatalf("非法 JSON: %v: %s", err, buf.String())
+		}
+		if got["dest"] != "toml" || got["env_path"] != path {
+			t.Errorf("dest/env_path 不符: %v", got)
 		}
 	})
 }

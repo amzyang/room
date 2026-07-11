@@ -1,0 +1,32 @@
+{
+  "scopes": {
+    "tenant": [
+      "calendar:calendar",
+      "calendar:calendar:readonly",
+      "calendar:calendar:read",
+      "calendar:calendar.event:create",
+      "calendar:calendar.event:read",
+      "calendar:calendar.event:delete",
+      "calendar:calendar.free_busy:read",
+      "vc:room:readonly",
+      "vc:reserve:readonly",
+      "contact:contact.base:readonly",
+      "contact:user.base:readonly",
+      "contact:user.employee_id:readonly"
+    ],
+    "user": [
+      "calendar:calendar",
+      "calendar:calendar:readonly",
+      "calendar:calendar:read",
+      "calendar:calendar.event:create",
+      "calendar:calendar.event:read",
+      "calendar:calendar.event:delete",
+      "calendar:calendar.free_busy:read",
+      "vc:room:readonly",
+      "vc:reserve:readonly",
+      "contact:contact.base:readonly",
+      "contact:user.base:readonly",
+      "contact:user.employee_id:readonly"
+    ]
+  }
+}

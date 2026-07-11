@@ -18,7 +18,7 @@ func newConfigCmd(a *app) *cobra.Command {
 		Use:   "config",
 		Short: "查看与修改配置（全局 config.toml）",
 		Long: "管理全局配置文件。KEY 接受 TOML 键（feishu.app_id）或环境变量名（FEISHU_APP_ID）。\n" +
-			"优先级：shell 环境变量 > 当前目录 .env > config.toml > 内置默认。\n" +
+			"优先级：shell 环境变量 > config.toml > 内置默认。\n" +
 			"不带子命令且在终端中运行时，进入交互式表单编辑全部配置。",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -70,8 +70,8 @@ func newConfigSetCmd(a *app) *cobra.Command {
 	}
 }
 
-// warnOverride 写入 TOML 后，若该 key 当前被更高层（shell env / .env）覆盖则提醒，
-// 否则用户会困惑「改了为什么不生效」（detectShellOverride 模式的泛化）。
+// warnOverride 写入 TOML 后，若该 key 当前被更高层（shell env）覆盖则提醒，
+// 否则用户会困惑「改了为什么不生效」。
 func warnOverride(cmd *cobra.Command, a *app, it config.Item) {
 	if src := a.cfg.OverrideOf(it.EnvKey); src != config.SourceUnset {
 		fmt.Fprintf(cmd.ErrOrStderr(), "注意: %s 当前来自 %s，在该环境下本次写入不生效（请移除对应的 %s 设置）\n",
@@ -99,7 +99,7 @@ func newConfigGetCmd(a *app) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&showSource, "source", false, "附加显示值来源（shell env/.env/config.toml/默认）")
+	cmd.Flags().BoolVar(&showSource, "source", false, "附加显示值来源（shell env/config.toml/默认）")
 	return cmd
 }
 

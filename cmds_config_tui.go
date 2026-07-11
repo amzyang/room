@@ -65,7 +65,7 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "已保存 %s\n", a.cfg.Path)
 
-	// 被更高层（shell env / .env）压住的项，保存了也不生效，当场列出免得用户困惑
+	// 被更高层（shell env）压住的项，保存了也不生效，当场列出免得用户困惑
 	var overridden []string
 	for _, it := range config.Registry {
 		if src := a.cfg.OverrideOf(it.EnvKey); src != config.SourceUnset {

@@ -124,7 +124,7 @@ func typeName(t Type) string {
 }
 
 const fileHeader = `# 此文件由 room config 管理;手工添加的注释会在下次保存时丢失。
-# 优先级:shell 环境变量 > 当前目录 .env > 此文件 > 内置默认。
+# 优先级:shell 环境变量 > 此文件 > 内置默认。
 `
 
 // Render schema 驱动整文件重生成:值来自 doc、注释来自 schema,未识别项原样保留。

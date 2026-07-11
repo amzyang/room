@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -120,19 +119,6 @@ func TestNormalize(t *testing.T) {
 		}
 		if got != tt.want {
 			t.Errorf("%s.Normalize(%q) = %q, want %q", tt.env, tt.in, got, tt.want)
-		}
-	}
-}
-
-// .env.example 是 env 名的权威清单,schema 不得与它失联。
-func TestEnvExampleCoversRegistry(t *testing.T) {
-	data, err := os.ReadFile("../.env.example")
-	if err != nil {
-		t.Fatalf("读取 .env.example 失败: %v", err)
-	}
-	for _, it := range Registry {
-		if !strings.Contains(string(data), it.EnvKey) {
-			t.Errorf(".env.example 缺少 %s", it.EnvKey)
 		}
 	}
 }

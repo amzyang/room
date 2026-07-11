@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/joho/godotenv"
-
 	"github.com/amzyang/room/envutil"
 )
 
@@ -16,7 +14,6 @@ const (
 	SourceUnset Source = iota
 	SourceDefault
 	SourceTOML
-	SourceDotenv
 	SourceShellEnv
 )
 
@@ -24,8 +21,6 @@ func (s Source) String() string {
 	switch s {
 	case SourceShellEnv:
 		return "shell env"
-	case SourceDotenv:
-		return ".env"
 	case SourceTOML:
 		return "config.toml"
 	case SourceDefault:
@@ -47,28 +42,24 @@ type Resolved struct {
 	Warning string           // TOML 层加载失败等非致命告警
 }
 
-// OverrideOf 该 key 的生效来源若高于 TOML 层(shell env / .env)则返回之,否则 SourceUnset。
+// OverrideOf 该 key 的生效来源若高于 TOML 层(shell env)则返回之,否则 SourceUnset。
 // 用于「写入 TOML 后提醒用户当前环境仍会覆盖」。
 func (r *Resolved) OverrideOf(envKey string) Source {
-	if e, ok := r.Entries[envKey]; ok && (e.Source == SourceShellEnv || e.Source == SourceDotenv) {
+	if e, ok := r.Entries[envKey]; ok && e.Source == SourceShellEnv {
 		return e.Source
 	}
 	return SourceUnset
 }
 
-// resolve 纯函数核心:三层原始值(map 中存在即显式设置)→ 生效表 + 待注入进程 env 的 TOML 值。
+// resolve 纯函数核心:两层原始值(map 中存在即显式设置)→ 生效表 + 待注入进程 env 的 TOML 值。
 // 默认值只进生效表、绝不注入:注入 SENTRY_DSN 的默认空值会把「未设置」变成「显式设空」,
 // 杀掉 sentry.go 的编译内置 fallback。
-func resolve(shell, dotenv, tomlVals map[string]string) (map[string]Entry, map[string]string) {
+func resolve(shell, tomlVals map[string]string) (map[string]Entry, map[string]string) {
 	entries := make(map[string]Entry, len(Registry))
 	inject := map[string]string{}
 	for _, it := range Registry {
 		if v, ok := shell[it.EnvKey]; ok {
 			entries[it.EnvKey] = Entry{envutil.CleanEnvValue(v), SourceShellEnv}
-			continue
-		}
-		if v, ok := dotenv[it.EnvKey]; ok {
-			entries[it.EnvKey] = Entry{envutil.CleanEnvValue(v), SourceDotenv}
 			continue
 		}
 		if v, ok := tomlVals[it.EnvKey]; ok {
@@ -86,19 +77,14 @@ func resolve(shell, dotenv, tomlVals map[string]string) (map[string]Entry, map[s
 }
 
 // Bootstrap 命令式外壳,进程启动时调用一次:
-// 快照 shell env → 加载 .env(godotenv 不覆盖已有 env)→ 读全局 TOML →
+// 快照 shell env → 读全局 TOML →
 // 把仅在 TOML 层生效的值注入进程 env,使现有 os.Getenv 调用点零改动。
-func Bootstrap(envPath, tomlPath string) *Resolved {
+func Bootstrap(tomlPath string) *Resolved {
 	shell := map[string]string{}
 	for _, it := range Registry {
 		if v, ok := os.LookupEnv(it.EnvKey); ok {
 			shell[it.EnvKey] = v
 		}
-	}
-	_ = godotenv.Load(envPath)
-	dotenv, err := godotenv.Read(envPath)
-	if err != nil {
-		dotenv = nil
 	}
 
 	r := &Resolved{Path: tomlPath}
@@ -110,7 +96,7 @@ func Bootstrap(envPath, tomlPath string) *Resolved {
 		tomlVals = doc.Values
 	}
 
-	entries, inject := resolve(shell, dotenv, tomlVals)
+	entries, inject := resolve(shell, tomlVals)
 	for k, v := range inject {
 		_ = os.Setenv(k, v)
 	}

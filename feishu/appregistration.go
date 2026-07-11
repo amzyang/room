@@ -29,7 +29,7 @@ const (
 var (
 	// ErrLarkTenantNotSupported poll 成功但 tenant_brand=lark 且 secret 为空：
 	// Lark 海外租户需切 accounts.larksuite.com 重试，room 仅支持飞书域，不支持。
-	ErrLarkTenantNotSupported = errors.New("检测到 Lark（海外版）租户：room 仅支持飞书（feishu.cn）域，请改用手动方式配置 .env")
+	ErrLarkTenantNotSupported = errors.New("检测到 Lark（海外版）租户：room 仅支持飞书（feishu.cn）域，请改用 room config set 手动配置凭证")
 	// ErrRegistrationDenied 用户在授权页拒绝创建应用。
 	ErrRegistrationDenied = errors.New("用户拒绝了授权")
 	// ErrRegistrationExpired 设备码过期或轮询超时。
@@ -178,7 +178,7 @@ func (r *AppRegistrar) Poll(ctx context.Context, deviceCode string, intervalSec,
 				if data.UserInfo.TenantBrand == "lark" {
 					return nil, ErrLarkTenantNotSupported
 				}
-				return nil, fmt.Errorf("应用注册响应缺少 client_secret，请重试或改用手动方式配置 .env")
+				return nil, fmt.Errorf("应用注册响应缺少 client_secret，请重试或改用 room config set 手动配置凭证")
 			}
 			return &AppCredentials{
 				AppID:       data.ClientID,

@@ -13,7 +13,7 @@ import (
 // $XDG_CONFIG_HOME/room/config.toml > ~/.config/room/config.toml。
 // 刻意不用 os.UserConfigDir:macOS 上它指向 ~/Library/Application Support,CLI 惯例是 ~/.config;
 // 仅 Windows 回退到 %APPDATA%。
-// 注意:在 main 中于加载 .env 之前求值,故 ROOM_CONFIG 只认 shell 层。
+// 注意:在 Bootstrap 注入 TOML 值之前求值,故 ROOM_CONFIG 只认 shell 环境变量。
 func DefaultPath() string {
 	home, _ := os.UserHomeDir()
 	return defaultPath(os.Getenv, home, runtime.GOOS)

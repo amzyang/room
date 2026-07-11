@@ -118,7 +118,6 @@ func TestConfigList(t *testing.T) {
 	a := newConfigTestApp(filepath.Join(t.TempDir(), "config.toml"), map[string]config.Entry{
 		"FEISHU_APP_ID":          {Value: "cli_x", Source: config.SourceShellEnv},
 		"FEISHU_APP_SECRET":      {Value: "supersecret123", Source: config.SourceTOML},
-		"TASK_OWNER":             {Value: "owner", Source: config.SourceDotenv},
 		"FEISHU_USER_AUTH_SCOPE": {Value: longScope, Source: config.SourceDefault},
 	})
 
@@ -126,7 +125,7 @@ func TestConfigList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"feishu.app_id", "FEISHU_APP_ID", "shell env", ".env", "config.toml", "不存在"} {
+	for _, want := range []string{"feishu.app_id", "FEISHU_APP_ID", "shell env", "config.toml", "默认", "不存在"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list 输出缺少 %q:\n%s", want, out)
 		}

@@ -40,11 +40,11 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 	}
 	taskOwner := env("TASK_OWNER")
 	if taskOwner == "" {
-		return nil, fmt.Errorf("缺失 TASK_OWNER 配置，请检查 .env 文件")
+		return nil, fmt.Errorf("缺失 TASK_OWNER 配置，请用 room config set booking.task_owner 设置")
 	}
 	roomList := envutil.ParseEnvList(os.Getenv("ROOM_LIST"))
 	if len(roomList) == 0 {
-		return nil, fmt.Errorf("缺失 ROOM_LIST 配置，请检查 .env 文件")
+		return nil, fmt.Errorf("缺失 ROOM_LIST 配置，请用 room config set booking.room_list 设置")
 	}
 
 	userTokenPath := env("FEISHU_USER_TOKEN_PATH")

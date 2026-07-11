@@ -1,5 +1,5 @@
 // Package config 集中管理 room 的配置 schema 与分层加载。
-// 分层优先级:shell 环境变量 > 当前目录 .env > 全局 config.toml > 内置默认。
+// 分层优先级:shell 环境变量 > 全局 config.toml > 内置默认。
 //
 // 约束:所有配置消费必须发生在 Bootstrap 之后并经 os.Getenv/os.LookupEnv 读取;
 // 不要在包级 var 或 init() 中读环境变量,否则会读到 TOML 注入前的值。

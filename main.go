@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	resolved := config.Bootstrap(".env", config.DefaultPath())
+	resolved := config.Bootstrap(config.DefaultPath())
 	if resolved.Warning != "" {
 		fmt.Fprintln(os.Stderr, "警告: "+resolved.Warning)
 	}

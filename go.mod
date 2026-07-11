@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/getsentry/sentry-go v0.47.0
-	github.com/joho/godotenv v1.5.1
 	github.com/larksuite/oapi-sdk-go/v3 v3.9.9
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2

@@ -25,7 +25,7 @@ room auto            # 按 TASK_FORMAT 自动预订（默认演练模式，--run
 room book [input]    # 智能预订：自然语言（需 OPENAI_API_KEY）或 -d/-t/-p 参数
 room list [-d 31]    # 列出未来 N 天的日历事件
 room cancel [-d 31]  # 交互式取消自己组织的事件
-room init            # 一键自动创建飞书个人应用并写入 .env（--force/--no-wait/--device-code/--json）
+room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code/--json）
 room login           # OAuth 设备码流程授权用户身份
 room notify [text]   # 通过自定义机器人 webhook 发送文本消息
 ```
@@ -49,8 +49,7 @@ room init    # 浏览器确认后自动创建 PersonalAgent 个人应用并写�
 room login   # 完成用户授权
 ```
 
-凭证写入位置：当前目录已有 `.env` 时写 `.env`（老部署行为不变），
-否则写全局 `~/.config/room/config.toml`。
+凭证写入全局 `~/.config/room/config.toml`。
 
 `room init` 通过匿名 OAuth 设备码流程自动创建飞书 PersonalAgent 个人应用，
 免去手动去开发者后台建应用、导权限。三种模式：
@@ -81,17 +80,16 @@ room config path                      # 打印全局配置文件路径
 配好后可在任意目录运行 room。配置优先级从高到低：
 
 1. shell 环境变量
-2. 当前目录 `.env`
-3. `~/.config/room/config.toml`
-4. 内置默认值
+2. `~/.config/room/config.toml`
+3. 内置默认值
 
 「改了不生效」时用 `room config list` 查看每项的实际来源；`set` 写入的项
 若被更高层覆盖会当场提示。
 
-### 手动配置（.env）
+### 环境变量
 
-也可复制 `.env.example` 为 `.env` 放在运行目录（优先级高于全局配置，
-Docker 部署即用此方式）。必填项：
+所有配置项也可用同名环境变量提供（优先级高于全局配置，Docker 部署经
+`docker run --env-file` 注入）。必填项：
 
 | 变量 | 说明 |
 |---|---|
@@ -102,9 +100,9 @@ Docker 部署即用此方式）。必填项：
 常用可选项：`ROOM_LEVEL_ID`（按楼层层级查找）、`ROOM_EXCLUDE_LIST`、`ROOM_SIZE`、
 `TASK_FORMAT`（auto 命令的任务 DSL）、`EMAIL_DOMAIN`（参与者邮箱域）、
 `TIANAPI_KEY`（节假日过滤）、`SENTRY_DSN`（错误上报）、`OPENAI_API_KEY`（NLP）。
-完整说明见 [.env.example](.env.example)。
+全部变量名与说明可用 `room config list` 查看。
 
-Sentry DSN 优先级：`--sentry-dsn` flag > `SENTRY_DSN` 环境变量（含 `.env`/config.toml）>
+Sentry DSN 优先级：`--sentry-dsn` flag > `SENTRY_DSN`（环境变量或 config.toml）>
 release 二进制编译内置。显式设空（`--sentry-dsn=""`、`SENTRY_DSN=` 或
 `room config set sentry.dsn ""`）则完全禁用错误上报。
 

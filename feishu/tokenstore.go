@@ -72,6 +72,14 @@ func (s *FileUserTokenStore) Read() *StoredUserToken {
 	return &token
 }
 
+// Delete 删除本地凭证文件；文件不存在视为成功。
+func (s *FileUserTokenStore) Delete() error {
+	if err := os.Remove(s.Path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (s *FileUserTokenStore) Write(token *StoredUserToken) error {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
 		return err

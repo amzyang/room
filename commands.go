@@ -42,6 +42,7 @@ func newRootCmd() *cobra.Command {
 		newBookCmd(a),
 		newListCmd(a),
 		newCancelCmd(a),
+		newInitCmd(a),
 		newLoginCmd(a),
 		newNotifyCmd(a),
 	)

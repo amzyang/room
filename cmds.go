@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
 	"github.com/amzyang/room/booking"
+	"github.com/amzyang/room/envutil"
 	"github.com/amzyang/room/feishu"
 	"github.com/amzyang/room/nlp"
 )
@@ -112,6 +117,241 @@ func newCancelCmd(a *app) *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&days, "days", "d", defaultCancelDays, "显示未来几天的事件")
 	return cmd
+}
+
+const (
+	envFilePath = ".env"
+	// --device-code 恢复轮询时 begin 的 interval/expires_in 已丢失，取保守值
+	initResumePollIntervalSec  = 5
+	initResumePollExpiresInSec = 600
+)
+
+// initOptions 汇总 init 命令的 flag。
+type initOptions struct {
+	force      bool   // 已有应用凭证时允许覆盖（同时撤销并清除已保存的登录凭证）
+	noWait     bool   // 仅发起注册并打印后立即返回、不轮询（供 agent/CI/无头环境两段式）
+	deviceCode string // 用前一次 --no-wait 得到的设备码恢复轮询
+	jsonOut    bool   // 输出机读 JSON（app_registration / app_registered 事件）
+}
+
+// newInitCmd 构造 init 命令：匿名 device flow 自动创建飞书 PersonalAgent 个人应用
+// 并把凭证写入 .env，替代去开放平台手动建应用抄 app_id/app_secret。
+func newInitCmd(a *app) *cobra.Command {
+	opts := initOptions{}
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "一键自动创建飞书 PersonalAgent 个人应用并把凭证写入 .env",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// agent 脚本取值失败易传出空串，静默降级为全新注册会白等一轮授权
+			if cmd.Flags().Changed("device-code") && opts.deviceCode == "" {
+				return fmt.Errorf("--device-code 不能为空")
+			}
+			return a.runInit(cmd.Context(), opts)
+		},
+	}
+	fl := cmd.Flags()
+	fl.BoolVar(&opts.force, "force", false, "覆盖已有应用凭证（同时撤销并清除已保存的登录凭证）")
+	fl.BoolVar(&opts.noWait, "no-wait", false, "仅发起注册并打印 device_code 后返回，不轮询（agent/CI 两段式）")
+	fl.StringVar(&opts.deviceCode, "device-code", "", "用前一次 --no-wait 得到的设备码恢复轮询")
+	fl.BoolVar(&opts.jsonOut, "json", false, "输出机读 JSON 事件（app_registration / app_registered）")
+	return cmd
+}
+
+// runInit 三种模式（与 login 的设备码流程同构）：
+//   - 默认（阻塞）：发起注册 → 展示授权链接（尽力打开浏览器）→ 原地轮询到应用创建完成。
+//   - --no-wait：仅发起注册并打印（含 device_code + 恢复命令）后立即返回。
+//   - --device-code <code>：跳过发起，用已有设备码恢复轮询换取并保存凭证。
+func (a *app) runInit(ctx context.Context, opts initOptions) error {
+	if err := validateInitOptions(opts); err != nil {
+		return err
+	}
+	// 覆盖保护在任何网络请求之前，begin 与 --device-code 恢复两条路径都要过
+	oldAppID, oldAppSecret := env("FEISHU_APP_ID"), env("FEISHU_APP_SECRET")
+	if err := checkExistingAppCredentials(oldAppID, oldAppSecret, opts.force); err != nil {
+		return err
+	}
+
+	tokenPath := env("FEISHU_USER_TOKEN_PATH")
+	if tokenPath == "" {
+		tokenPath = defaultUserTokenPath
+	}
+	reg := &feishu.AppRegistrar{HTTP: feishu.NewHTTPClient(tlsInsecure()), Log: a.log, Clock: a.now}
+	// 写回前捕获 shell export 覆盖检测所需的文件状态
+	shellOverride := detectShellOverride(envFilePath)
+
+	// 恢复轮询模式：用已有 device_code 直接轮询换取应用凭证
+	if opts.deviceCode != "" {
+		if !opts.jsonOut {
+			fmt.Println("正在轮询应用创建结果...（在浏览器完成授权后将自动继续）")
+		}
+		creds, err := reg.Poll(ctx, opts.deviceCode, initResumePollIntervalSec, initResumePollExpiresInSec)
+		if err != nil {
+			return err
+		}
+		return a.finishInit(ctx, creds, oldAppID, oldAppSecret, tokenPath, shellOverride, opts.jsonOut)
+	}
+
+	code, err := reg.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("自动创建应用失败（%w）。可改用手动方式：在 open.feishu.cn 创建应用并把凭证填入 .env", err)
+	}
+
+	// 发起-即返回模式：打印设备码供后续 --device-code 恢复，不阻塞轮询
+	if opts.noWait {
+		emitAppRegistration(os.Stdout, code, opts.jsonOut, true, opts.force)
+		return nil
+	}
+
+	// 默认阻塞模式：展示授权入口 + 尽力打开浏览器 + 原地轮询到完成
+	emitAppRegistration(os.Stdout, code, opts.jsonOut, false, opts.force)
+	feishu.OpenBrowser(code.VerificationURIComplete)
+	if !opts.jsonOut {
+		fmt.Println("\n等待授权中...（在浏览器完成授权后将自动继续）")
+	}
+	creds, err := reg.Poll(ctx, code.DeviceCode, code.IntervalSec, code.ExpiresInSec)
+	if err != nil {
+		return err
+	}
+	return a.finishInit(ctx, creds, oldAppID, oldAppSecret, tokenPath, shellOverride, opts.jsonOut)
+}
+
+// finishInit 注册成功后的收尾：写 .env → 撤销旧应用登录凭证 → 提示 shell 覆盖风险。
+// 先落盘再撤销：写入失败时保留旧登录态，避免「新应用已创建、旧登录又被销毁」的双输局面。
+func (a *app) finishInit(ctx context.Context, creds *feishu.AppCredentials, oldAppID, oldAppSecret, tokenPath string, shellOverride, jsonOut bool) error {
+	if err := saveAppCredentials(os.Stdout, envFilePath, creds, jsonOut); err != nil {
+		return err
+	}
+	a.revokeOldLoginBestEffort(ctx, oldAppID, oldAppSecret, tokenPath)
+	if shellOverride {
+		a.log.Warn("检测到 shell 环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 将覆盖 .env，请 unset 后再运行 room login")
+	}
+	return nil
+}
+
+// validateInitOptions 校验互斥的 flag 组合。
+func validateInitOptions(opts initOptions) error {
+	if opts.noWait && opts.deviceCode != "" {
+		return fmt.Errorf("--no-wait 与 --device-code 互斥：前者发起注册，后者恢复轮询")
+	}
+	return nil
+}
+
+// checkExistingAppCredentials 保护已有应用凭证：覆盖需显式 --force（并意味着清除旧应用的登录凭证）。
+func checkExistingAppCredentials(appID, appSecret string, force bool) error {
+	if force {
+		return nil
+	}
+	if appID != "" || appSecret != "" {
+		return fmt.Errorf(".env/环境变量已有应用凭证（app_id %s）。如需替换为新应用请加 --force（将同时撤销并清除已保存的登录凭证，需重新 room login）", maskSecret(appID))
+	}
+	return nil
+}
+
+// detectShellOverride 检查进程 env 中的应用凭证是否来自 shell export 而非 .env：
+// godotenv 不覆盖已存在的进程 env，shell 值会持续压过写回后的 .env。
+func detectShellOverride(envPath string) bool {
+	fileVals, err := godotenv.Read(envPath)
+	if err != nil {
+		fileVals = map[string]string{}
+	}
+	for _, key := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"} {
+		if procVal := env(key); procVal != "" && procVal != envutil.CleanEnvValue(fileVals[key]) {
+			return true
+		}
+	}
+	return false
+}
+
+// revokeOldLoginBestEffort 覆盖旧凭证前撤销旧应用的远端 token（失败仅告警），
+// 并无条件删除本地用户凭证文件——旧 token 属旧应用，残留会让新应用误带失效凭证。
+func (a *app) revokeOldLoginBestEffort(ctx context.Context, oldAppID, oldAppSecret, tokenPath string) {
+	store := &feishu.FileUserTokenStore{Path: tokenPath}
+	if oldAppID != "" && oldAppSecret != "" {
+		client := &feishu.OAuthClient{HTTP: feishu.NewHTTPClient(tlsInsecure()), AppID: oldAppID, AppSecret: oldAppSecret}
+		feishu.RevokeStoredTokensBestEffort(ctx, store, client, a.log)
+	}
+	if err := store.Delete(); err != nil {
+		a.log.Warn("删除本地用户凭证失败", "path", tokenPath, "error", err)
+	}
+}
+
+// emitAppRegistration 输出应用注册授权入口；showResumeHint 为 true 时附上 --device-code
+// 恢复命令（--no-wait 用），withForce 为 true 时恢复命令带 --force（第二段是独立进程，不继承覆盖确认）。
+func emitAppRegistration(w io.Writer, code *feishu.AppRegistrationCode, asJSON, showResumeHint, withForce bool) {
+	resume := ""
+	if showResumeHint {
+		resume = "room init --device-code " + code.DeviceCode
+		if withForce {
+			resume += " --force"
+		}
+	}
+	if asJSON {
+		printJSON(w, struct {
+			Event                   string `json:"event"`
+			DeviceCode              string `json:"device_code"`
+			UserCode                string `json:"user_code"`
+			VerificationURI         string `json:"verification_uri"`
+			VerificationURIComplete string `json:"verification_uri_complete"`
+			ExpiresIn               int    `json:"expires_in"`
+			Interval                int    `json:"interval"`
+			ResumeCommand           string `json:"resume_command,omitempty"`
+		}{"app_registration", code.DeviceCode, code.UserCode, code.VerificationURI, code.VerificationURIComplete, code.ExpiresInSec, code.IntervalSec, resume})
+		return
+	}
+	fmt.Fprintln(w, "请在浏览器中打开以下链接，登录飞书并确认创建个人应用：")
+	fmt.Fprintf(w, "\n    %s\n\n", code.VerificationURIComplete)
+	if code.UserCode != "" {
+		fmt.Fprintf(w, "如页面提示输入验证码，请输入：%s\n", code.UserCode)
+		if code.VerificationURI != "" {
+			fmt.Fprintf(w, "（或手动访问 %s 并输入上述验证码）\n", code.VerificationURI)
+		}
+	}
+	if resume != "" {
+		fmt.Fprintf(w, "\n设备码 device_code：%s\n", code.DeviceCode)
+		fmt.Fprintln(w, "授权完成后运行以下命令换取并保存应用凭证（适合 agent/CI/无头环境两段式）：")
+		fmt.Fprintf(w, "    %s\n", resume)
+	}
+}
+
+// saveAppCredentials 把注册到的应用凭证写入 .env 并输出结果；stdout 绝不打印明文 secret。
+func saveAppCredentials(w io.Writer, envPath string, creds *feishu.AppCredentials, asJSON bool) error {
+	err := envutil.UpsertEnvFile(envPath, []envutil.EnvPair{
+		{Key: "FEISHU_APP_ID", Value: creds.AppID},
+		{Key: "FEISHU_APP_SECRET", Value: creds.AppSecret},
+	})
+	if err != nil {
+		// 此时应用已在飞书侧创建，app_id 可打印（非机密），secret 只能去开发者后台找回
+		return fmt.Errorf("写入 %s 失败: %w（新应用 %s 已创建，app_secret 可在 open.feishu.cn 开发者后台查看）", envPath, err, creds.AppID)
+	}
+
+	if asJSON {
+		printJSON(w, struct {
+			Event       string `json:"event"`
+			AppID       string `json:"app_id"`
+			OpenID      string `json:"open_id"`
+			TenantBrand string `json:"tenant_brand"`
+			EnvPath     string `json:"env_path"`
+		}{"app_registered", creds.AppID, creds.OpenID, creds.TenantBrand, envPath})
+		return nil
+	}
+	fmt.Fprintf(w, "\n应用创建成功！app_id: %s（app_secret 已写入 %s，不在终端显示）\n", creds.AppID, envPath)
+	fmt.Fprintln(w, "请运行 room login 完成用户授权")
+	return nil
+}
+
+func printJSON(w io.Writer, v any) {
+	data, _ := json.Marshal(v)
+	fmt.Fprintln(w, string(data))
+}
+
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 8 {
+		return "****"
+	}
+	return "****" + s[len(s)-4:]
 }
 
 func newLoginCmd(a *app) *cobra.Command {

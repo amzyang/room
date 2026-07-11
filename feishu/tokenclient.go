@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	deviceAuthURL = "https://accounts.feishu.cn/oauth/v1/device_authorization"
-	oauthTokenURL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
-	tenantAuthURL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-	offlineAccess = "offline_access"
+	deviceAuthURL  = "https://accounts.feishu.cn/oauth/v1/device_authorization"
+	oauthTokenURL  = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+	tenantAuthURL  = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+	oauthRevokeURL = "https://accounts.feishu.cn/oauth/v1/revoke"
+	offlineAccess  = "offline_access"
 )
 
 // DeviceAuthorization 设备授权响应。
@@ -65,6 +66,44 @@ type OAuthClient struct {
 	HTTP      *http.Client
 	AppID     string
 	AppSecret string
+
+	revokeURL string // 测试缝隙：空走 oauthRevokeURL
+}
+
+// RevokeToken 撤销一枚已签发的 OAuth token（best-effort 登出/换应用用）。
+// POST accounts 域 /oauth/v1/revoke，form-encoded，无 Authorization 头；
+// tokenTypeHint 取 "refresh_token" 或 "access_token"。
+func (c *OAuthClient) RevokeToken(ctx context.Context, token, tokenTypeHint string) error {
+	form := url.Values{}
+	form.Set("client_id", c.AppID)
+	form.Set("client_secret", c.AppSecret)
+	form.Set("token", token)
+	if tokenTypeHint != "" {
+		form.Set("token_type_hint", tokenTypeHint)
+	}
+
+	endpoint := c.revokeURL
+	if endpoint == "" {
+		endpoint = oauthRevokeURL
+	}
+	status, body, err := postForm(ctx, c.HTTP, endpoint, form, "")
+	if err != nil {
+		return fmt.Errorf("revoke 请求失败: %w", err)
+	}
+	if status >= 400 {
+		return fmt.Errorf("revoke 失败: HTTP %d: %s", status, strings.TrimSpace(string(body)))
+	}
+	// 飞书业务错误：HTTP 200 但 body 里 code != 0
+	if len(body) > 0 {
+		var data struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if err := json.Unmarshal(body, &data); err == nil && data.Code != 0 {
+			return fmt.Errorf("revoke 失败 [%d]: %s", data.Code, data.Msg)
+		}
+	}
+	return nil
 }
 
 // VerifyTenantCredentials 显式获取一次 tenant_access_token 以校验应用凭据

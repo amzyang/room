@@ -25,6 +25,7 @@ room auto            # 按 TASK_FORMAT 自动预订（默认演练模式，--run
 room book [input]    # 智能预订：自然语言（需 OPENAI_API_KEY）或 -d/-t/-p 参数
 room list [-d 31]    # 列出未来 N 天的日历事件
 room cancel [-d 31]  # 交互式取消自己组织的事件
+room init            # 一键自动创建飞书个人应用并写入 .env（--force/--no-wait/--device-code/--json）
 room login           # OAuth 设备码流程授权用户身份
 room notify [text]   # 通过自定义机器人 webhook 发送文本消息
 ```
@@ -40,6 +41,29 @@ room list -d 7
 ```
 
 ## 配置
+
+### 一键创建个人应用（推荐）
+
+```bash
+room init    # 浏览器确认后自动创建 PersonalAgent 个人应用，凭证写入 .env
+room login   # 完成用户授权
+```
+
+`room init` 通过匿名 OAuth 设备码流程自动创建飞书 PersonalAgent 个人应用，
+免去手动去开发者后台建应用、导权限。三种模式：
+
+- 默认：展示授权链接（尽力打开浏览器）并原地轮询到创建完成；
+- `--no-wait`：仅发起注册并打印 `device_code` 后返回，之后用
+  `room init --device-code <code>` 恢复轮询换取凭证（适合 agent/CI/无头环境两段式）；
+- `--json`：输出机读 JSON 事件（`app_registration` / `app_registered`）。
+
+已有凭证时需加 `--force` 覆盖，会同时撤销旧应用的登录 token 并删除
+`.cache/feishu-user-token.json`，需重新 `room login`。
+
+注意：注册端点为未公开接口（考证自 lark-cli），仅支持飞书国内域
+（Lark 海外租户不支持）；如自动创建失败或遇权限报错，请退回下面的手动方式。
+
+### 手动配置
 
 复制 `.env.example` 为 `.env` 并填写。必填项：
 
@@ -71,7 +95,9 @@ TASK_FORMAT="fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,17:30:00-18
 
 ## 飞书应用权限
 
-在飞书开发者后台「权限管理 → 批量导入」中导入 [permissions.json](permissions.json)。
+手动建应用时，在飞书开发者后台「权限管理 → 批量导入」中导入
+[permissions.json](permissions.json)（针对应用身份 tenant 权限）。
+`room init` 自动创建的个人应用如遇权限类报错（如 99991672），请退回手动建应用并导入权限。
 用户身份预订需先运行 `room login` 完成 OAuth 设备码授权（凭证存于
 `.cache/feishu-user-token.json`，授权硬顶一年，到期需重新 login）。
 

@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-func openBrowser(url string) {
+// OpenBrowser 尽力用系统默认浏览器打开 url；失败时仅依赖终端打印的链接，忽略错误。
+func OpenBrowser(url string) {
 	var opener string
 	switch runtime.GOOS {
 	case "darwin":
@@ -18,7 +19,6 @@ func openBrowser(url string) {
 	default:
 		opener = "xdg-open"
 	}
-	// 打开失败时仅依赖终端打印的链接，忽略错误
 	_ = exec.Command(opener, url).Start()
 }
 
@@ -40,7 +40,7 @@ func RunDeviceLogin(ctx context.Context, auth *Auth, scope string) (*StoredUserT
 		auth.Log.Info("  用户码 user_code: " + device.UserCode)
 	}
 	auth.Log.Info("（正在尝试自动打开浏览器；若未打开请手动复制上面的链接）")
-	openBrowser(verifyURL)
+	OpenBrowser(verifyURL)
 
 	deadline := auth.Clock().Add(time.Duration(device.ExpiresInSec) * time.Second)
 	interval := time.Duration(device.IntervalSec) * time.Second

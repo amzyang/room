@@ -31,7 +31,7 @@ type Config struct {
 }
 
 // NewHTTPClient 构建共享的 HTTP 客户端；insecure 为 true 时跳过 TLS 证书校验
-//（对齐原 Node 版 NODE_TLS_REJECT_UNAUTHORIZED=0，经 ROOM_TLS_INSECURE=0 可关闭）。
+// （对齐原 Node 版 NODE_TLS_REJECT_UNAUTHORIZED=0，经 ROOM_TLS_INSECURE=0 可关闭）。
 func NewHTTPClient(insecure bool) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if insecure {

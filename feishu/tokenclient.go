@@ -68,7 +68,7 @@ type OAuthClient struct {
 }
 
 // VerifyTenantCredentials 显式获取一次 tenant_access_token 以校验应用凭据
-//（业务调用的 tenant token 由 SDK 自动管理）。
+// （业务调用的 tenant token 由 SDK 自动管理）。
 func (c *OAuthClient) VerifyTenantCredentials(ctx context.Context) error {
 	body, _ := json.Marshal(map[string]string{"app_id": c.AppID, "app_secret": c.AppSecret})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tenantAuthURL, strings.NewReader(string(body)))

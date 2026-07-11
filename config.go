@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	defaultCancelDays       = 31
-	defaultMeetingTitle     = "meeting"
-	defaultUserTokenPath    = ".cache/feishu-user-token.json"
-	defaultUserAuthScope    = "calendar:calendar calendar:calendar:readonly calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:delete calendar:calendar.free_busy:read vc:room:readonly vc:reserve:readonly contact:user.base:readonly contact:user.employee_id:readonly contact:contact.base:readonly"
-	holidayCacheDir         = ".cache/holidays"
-	userIDCachePath         = ".cache/user_ids_lark.json"
-	autoBookingCachePath    = ".cache/auto-booking-cache.json"
+	defaultCancelDays    = 31
+	defaultMeetingTitle  = "meeting"
+	defaultUserTokenPath = ".cache/feishu-user-token.json"
+	defaultUserAuthScope = "calendar:calendar calendar:calendar:readonly calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:delete calendar:calendar.free_busy:read vc:room:readonly vc:reserve:readonly contact:user.base:readonly contact:user.employee_id:readonly contact:contact.base:readonly"
+	holidayCacheDir      = ".cache/holidays"
+	userIDCachePath      = ".cache/user_ids_lark.json"
+	autoBookingCachePath = ".cache/auto-booking-cache.json"
 )
 
 func env(key string) string {

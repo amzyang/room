@@ -91,7 +91,7 @@ var weekdayNames = map[time.Weekday]string{
 }
 
 // ParseOneShotWithDefaults 解析并填充默认值：无 endTime 时按 duration
-//（缺省 60 分钟）计算。
+// （缺省 60 分钟）计算。
 func (p *Parser) ParseOneShotWithDefaults(ctx context.Context, input string) (*ParsedOneShotInfo, error) {
 	parsed, err := p.ParseOneShotRequest(ctx, input)
 	if err != nil {

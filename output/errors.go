@@ -18,6 +18,7 @@ const (
 	TypeConflict             ErrType = "conflict"
 	TypeNoRoom               ErrType = "no_room"
 	TypeHolidaySkipped       ErrType = "holiday_skipped"
+	TypeNoParticipants       ErrType = "no_participants"
 	TypeConfirmationRequired ErrType = "confirmation_required"
 	TypeInternal             ErrType = "internal"
 )

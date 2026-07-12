@@ -57,6 +57,7 @@ func TestExitCode(t *testing.T) {
 		{"conflict", Errf(TypeConflict, "", "overlap"), ExitAPI},
 		{"no_room", Errf(TypeNoRoom, "", "no room"), ExitAPI},
 		{"holiday", Errf(TypeHolidaySkipped, "", "holiday"), ExitAPI},
+		{"no_participants", Errf(TypeNoParticipants, "", "no participants"), ExitAPI},
 		{"internal", Errf(TypeInternal, "", "boom"), ExitAPI},
 		{"未分类兜底为 api", errors.New("plain"), ExitAPI},
 		{"包装链中识别类型", fmt.Errorf("outer: %w", Errf(TypeValidation, "", "inner")), ExitValidation},
@@ -86,6 +87,7 @@ func TestReportable(t *testing.T) {
 		{"no_room 业务结果不上报", Errf(TypeNoRoom, "", "no room"), false},
 		{"conflict 业务结果不上报", Errf(TypeConflict, "", "overlap"), false},
 		{"holiday 业务结果不上报", Errf(TypeHolidaySkipped, "", "holiday"), false},
+		{"no_participants 业务结果不上报", Errf(TypeNoParticipants, "", "no participants"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -34,6 +34,7 @@ type API interface {
 	GetRoomFreeBusy(ctx context.Context, roomID string, start, end time.Time) (bool, error)
 	FindUsersByEmails(ctx context.Context, emails []string) ([]feishu.User, error)
 	BookRoomWithEvent(ctx context.Context, event feishu.Event, roomID string, userIDs []string) (string, error)
+	CurrentUser(ctx context.Context) *feishu.UserIdentity
 }
 
 // Config 预订服务配置（由入口层从 env 组装并校验）。
@@ -43,7 +44,6 @@ type Config struct {
 	RoomLevelID     string
 	RoomSize        int
 	TaskFormat      string
-	TaskOwner       string
 	EmailDomain     string
 	TianAPIKey      string
 }
@@ -202,7 +202,7 @@ func (s *Service) CancelEvent(ctx context.Context, eventID string) (*CancelOutco
 // AutoBook 按 TASK_FORMAT 在最大可预订天数窗口内批量预订，返回逐条结果。
 // 批量语义：单条未订到/失败不是整体错误，靠结果的 Status 区分。
 func (s *Service) AutoBook(ctx context.Context, dryRun bool) ([]BookResult, error) {
-	tasks := ParseTaskFormat(s.Cfg.TaskFormat, s.Cfg.TaskOwner)
+	tasks := ParseTaskFormat(s.Cfg.TaskFormat)
 	maxDays := s.getMaxBookingDays(ctx)
 	now := s.Clock().In(s.Loc)
 	deadline := endOfDay(now.AddDate(0, 0, maxDays))
@@ -274,6 +274,19 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 		return nil, fmt.Errorf("无效的结束时间: %w", err)
 	}
 
+	// 授权用户接替原 TASK_OWNER：有 user_id 时自动加入参会人（按 ID 去重）。
+	// 无任何有效参会人的预订是无效预订，先于日历/会议室 API 直接放弃。
+	participantIDs, unresolved := s.resolveParticipants(ctx, participants)
+	if self := s.API.CurrentUser(ctx); self != nil && self.UserID != "" && !contains(participantIDs, self.UserID) {
+		participantIDs = append(participantIDs, self.UserID)
+	}
+	result.ParticipantsUnresolved = unresolved
+	if len(participantIDs) == 0 {
+		s.Log.Warn(fmt.Sprintf("无有效参会人（未登录且参会人为空或全部解析失败），放弃预订: %s %s-%s", dateStr, startTime, endTime))
+		result.Status = StatusNoParticipants
+		return result, nil
+	}
+
 	dayStart := startOfDay(startDateTime)
 	existingEvents, err := s.API.GetCalendarEvents(ctx, dayStart, endOfDay(startDateTime))
 	if err != nil {
@@ -301,13 +314,6 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 		Timezone:        "Asia/Shanghai",
 		Location:        room.Name,
 		ReminderMinutes: 15,
-	}
-
-	var participantIDs []string
-	for _, participant := range participants {
-		if id := s.resolveParticipantID(ctx, participant); id != "" {
-			participantIDs = append(participantIDs, id)
-		}
 	}
 
 	eventID, err := s.API.BookRoomWithEvent(ctx, event, room.ID, participantIDs)
@@ -352,6 +358,18 @@ func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, start, end time
 		}
 	}
 	return false
+}
+
+// resolveParticipants 逐个解析参会人，返回解析成功的 ID 与解析失败的原始输入。
+func (s *Service) resolveParticipants(ctx context.Context, participants []string) (ids, unresolved []string) {
+	for _, participant := range participants {
+		if id := s.resolveParticipantID(ctx, participant); id != "" {
+			ids = append(ids, id)
+		} else {
+			unresolved = append(unresolved, participant)
+		}
+	}
+	return ids, unresolved
 }
 
 func (s *Service) resolveParticipantID(ctx context.Context, participant string) string {

@@ -56,7 +56,6 @@ func (f *fakeBookingSvc) BookRoom(_ context.Context, date, startTime, endTime, t
 // newAgentTestApp 非交互（非 TTY）环境下的测试 app，stdin 输入可注入。
 func newAgentTestApp(t *testing.T, svc bookingService, stdin string) *app {
 	t.Helper()
-	t.Setenv("TASK_OWNER", "")
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	a := &app{
 		loc: loc,
@@ -158,6 +157,7 @@ func TestBookNotBookedIsTypedError(t *testing.T) {
 		{booking.StatusNoRoom, output.TypeNoRoom},
 		{booking.StatusConflict, output.TypeConflict},
 		{booking.StatusHolidaySkipped, output.TypeHolidaySkipped},
+		{booking.StatusNoParticipants, output.TypeNoParticipants},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.status), func(t *testing.T) {
@@ -180,6 +180,34 @@ func TestBookNotBookedIsTypedError(t *testing.T) {
 				t.Errorf("未订到时 stdout 应为空: %q", out)
 			}
 		})
+	}
+}
+
+func TestBookNoParticipantsHintAndDetail(t *testing.T) {
+	svc := &fakeBookingSvc{result: &booking.BookResult{
+		Status: booking.StatusNoParticipants,
+		Date:   "2026-07-15", StartTime: "14:00:00", EndTime: "15:00:00",
+		ParticipantsUnresolved: []string{"ghost"},
+	}}
+	a := newAgentTestApp(t, svc, "")
+	_, err := execAppCmd(t, a, newBookCmd, "-d", "07-15", "-t", "14:00-15:00")
+	if err == nil {
+		t.Fatal("无有效参会人应返回错误")
+	}
+	e := output.Classify(err)
+	if e.Type != output.TypeNoParticipants {
+		t.Errorf("error.type = %s, want no_participants", e.Type)
+	}
+	if !strings.Contains(e.Hint, "room login") {
+		t.Errorf("hint 应指引 room login: %q", e.Hint)
+	}
+	detail, ok := e.Detail.(map[string]any)
+	if !ok {
+		t.Fatalf("detail 类型不符: %T", e.Detail)
+	}
+	unresolved, _ := detail["participants_unresolved"].([]string)
+	if len(unresolved) != 1 || unresolved[0] != "ghost" {
+		t.Errorf("detail.participants_unresolved = %v, want [ghost]", detail["participants_unresolved"])
 	}
 }
 
@@ -242,6 +270,7 @@ func TestBookStatusErrTypeVocabularyAligned(t *testing.T) {
 		{booking.StatusNoRoom, output.TypeNoRoom},
 		{booking.StatusConflict, output.TypeConflict},
 		{booking.StatusHolidaySkipped, output.TypeHolidaySkipped},
+		{booking.StatusNoParticipants, output.TypeNoParticipants},
 	}
 	for _, p := range pairs {
 		if string(p.status) != string(p.errType) {

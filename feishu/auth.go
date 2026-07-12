@@ -89,6 +89,66 @@ func (a *Auth) CalendarAuthOptions(ctx context.Context) ([]larkcore.RequestOptio
 	return a.calendarOptions, nil
 }
 
+// RefreshIdentity 强制拉取当前授权用户身份并覆盖写入存储（覆盖是关键：
+// 换账号重登录时不能残留上一账号身份）。获取失败时清空身份字段并返回 error，
+// 由上层降级为警告（登录本身不失败）。
+func (a *Auth) RefreshIdentity(ctx context.Context) (*StoredUserToken, error) {
+	accessToken := a.UserAccessToken(ctx)
+	identity, err := a.TokenClient.GetUserInfo(ctx, accessToken)
+
+	// UserAccessToken 可能刚刷新并持久化了新 token，重新 Read 防止覆盖
+	stored := a.Store.Read()
+	if stored == nil {
+		return nil, fmt.Errorf("无用户凭证，无法获取用户身份")
+	}
+	if accessToken == "" {
+		err = fmt.Errorf("无有效用户 access_token")
+	}
+	if err != nil {
+		stored.OpenID, stored.UserID, stored.Name = "", "", ""
+		a.writeStore(stored)
+		return stored, err
+	}
+	stored.OpenID, stored.UserID, stored.Name = identity.OpenID, identity.UserID, identity.Name
+	a.writeStore(stored)
+	return stored, nil
+}
+
+// UserIdentity 已登录用户身份。优先读存储中已持久化的身份；身份为空（旧凭证）
+// 且能取得有效 access_token 时 lazy backfill（调 user_info 并回写存储）。
+// 无凭证 / 回填失败返回 nil（仅打 warn，不报错）。
+func (a *Auth) UserIdentity(ctx context.Context) *UserIdentity {
+	stored := a.Store.Read()
+	if stored == nil {
+		return nil
+	}
+	if stored.OpenID != "" || stored.UserID != "" {
+		return &UserIdentity{OpenID: stored.OpenID, UserID: stored.UserID, Name: stored.Name}
+	}
+
+	accessToken := a.UserAccessToken(ctx)
+	if accessToken == "" {
+		return nil
+	}
+	identity, err := a.TokenClient.GetUserInfo(ctx, accessToken)
+	if err != nil {
+		a.Log.Warn(fmt.Sprintf("获取用户身份失败: %v", err))
+		return nil
+	}
+	// 回写前重新 Read：UserAccessToken 可能刚刷新并持久化了新 token
+	if cur := a.Store.Read(); cur != nil {
+		cur.OpenID, cur.UserID, cur.Name = identity.OpenID, identity.UserID, identity.Name
+		a.writeStore(cur)
+	}
+	return identity
+}
+
+func (a *Auth) writeStore(token *StoredUserToken) {
+	if err := a.Store.Write(token); err != nil {
+		a.Log.Error(fmt.Sprintf("保存用户凭证失败: %v", err))
+	}
+}
+
 // Persist 将 token 结果写入存储；prev 用于保留旧凭证中的补充字段。
 func (a *Auth) Persist(result *UserTokenResult, prev *StoredUserToken) *StoredUserToken {
 	now := a.Clock()

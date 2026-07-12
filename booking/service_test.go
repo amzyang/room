@@ -13,13 +13,18 @@ import (
 
 // fakeAPI 内存实现 booking.API，各方法返回可配置。
 type fakeAPI struct {
-	rooms        []feishu.Room
-	events       []feishu.CalendarEvent
-	freeBusy     bool
-	bookEventID  string
-	bookErr      error
-	deleteErr    error
-	bookedRoomID string
+	rooms         []feishu.Room
+	events        []feishu.CalendarEvent
+	freeBusy      bool
+	bookEventID   string
+	bookErr       error
+	deleteErr     error
+	bookedRoomID  string
+	bookedUserIDs []string
+	bookCalls     int
+
+	currentUser   *feishu.UserIdentity
+	noCurrentUser bool // 模拟未登录：newTestService 不注入默认身份
 }
 
 func (f *fakeAPI) VerifyCredentials(context.Context) error { return nil }
@@ -46,10 +51,13 @@ func (f *fakeAPI) GetRoomFreeBusy(context.Context, string, time.Time, time.Time)
 func (f *fakeAPI) FindUsersByEmails(context.Context, []string) ([]feishu.User, error) {
 	return nil, nil
 }
-func (f *fakeAPI) BookRoomWithEvent(_ context.Context, _ feishu.Event, roomID string, _ []string) (string, error) {
+func (f *fakeAPI) BookRoomWithEvent(_ context.Context, _ feishu.Event, roomID string, userIDs []string) (string, error) {
+	f.bookCalls++
 	f.bookedRoomID = roomID
+	f.bookedUserIDs = userIDs
 	return f.bookEventID, f.bookErr
 }
+func (f *fakeAPI) CurrentUser(context.Context) *feishu.UserIdentity { return f.currentUser }
 
 func newTestService(t *testing.T, api *fakeAPI) *Service {
 	t.Helper()
@@ -59,9 +67,12 @@ func newTestService(t *testing.T, api *fakeAPI) *Service {
 	auto.Load()
 	users := &UserIDCache{Path: filepath.Join(dir, "users.json")}
 	users.Load()
+	if api.currentUser == nil && !api.noCurrentUser {
+		api.currentUser = &feishu.UserIdentity{OpenID: "ou_me", UserID: "u_me", Name: "我"}
+	}
 	return &Service{
 		API:       api,
-		Cfg:       Config{RoomList: []string{"3F-A"}, TaskOwner: "owner"},
+		Cfg:       Config{RoomList: []string{"3F-A"}},
 		Log:       logx.New(false, loc),
 		Clock:     func() time.Time { return time.Date(2026, 7, 10, 9, 0, 0, 0, loc) },
 		Loc:       loc,
@@ -163,6 +174,162 @@ func TestBookRoomAPIErrorIsError(t *testing.T) {
 	_, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
 	if !errors.Is(err, boom) {
 		t.Errorf("API 错误应向上传递: %v", err)
+	}
+}
+
+func bookableAPI() *fakeAPI {
+	return &fakeAPI{
+		rooms:       []feishu.Room{{ID: "omm_1", Name: "3F-A", Status: 1}},
+		freeBusy:    true,
+		bookEventID: "evt_1",
+	}
+}
+
+func TestBookRoomAppendsAuthorizedUser(t *testing.T) {
+	api := bookableAPI()
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusBooked {
+		t.Fatalf("Status = %s, want booked", got.Status)
+	}
+	if len(api.bookedUserIDs) != 1 || api.bookedUserIDs[0] != "u_me" {
+		t.Errorf("授权用户应自动加入参会人: %v", api.bookedUserIDs)
+	}
+	if got.ParticipantsResolved != 1 {
+		t.Errorf("ParticipantsResolved = %d, want 1", got.ParticipantsResolved)
+	}
+}
+
+func TestBookRoomSelfDeduplicated(t *testing.T) {
+	api := bookableAPI()
+	s := newTestService(t, api)
+	if err := s.UserIDs.Set("me", "u_me"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"me"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.bookedUserIDs) != 1 || api.bookedUserIDs[0] != "u_me" {
+		t.Errorf("本人已在参会人列表时不应重复追加: %v", api.bookedUserIDs)
+	}
+}
+
+func TestBookRoomNoParticipantsAborts(t *testing.T) {
+	api := bookableAPI()
+	api.noCurrentUser = true
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusNoParticipants {
+		t.Fatalf("Status = %s, want no_participants", got.Status)
+	}
+	if api.bookCalls != 0 {
+		t.Error("归零放弃不应触达预订 API")
+	}
+	if s.AutoCache.Has("evt_1") {
+		t.Error("归零放弃不应写入 AutoCache")
+	}
+}
+
+func TestBookRoomAllUnresolvedAborts(t *testing.T) {
+	api := bookableAPI()
+	api.noCurrentUser = true
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusNoParticipants {
+		t.Fatalf("Status = %s, want no_participants", got.Status)
+	}
+	if len(got.ParticipantsUnresolved) != 1 || got.ParticipantsUnresolved[0] != "ghost" {
+		t.Errorf("ParticipantsUnresolved = %v, want [ghost]", got.ParticipantsUnresolved)
+	}
+}
+
+func TestBookRoomGroupCountsAsHuman(t *testing.T) {
+	api := bookableAPI()
+	api.noCurrentUser = true
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"oc_g1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusBooked {
+		t.Fatalf("Status = %s, want booked（群参会人算有效）", got.Status)
+	}
+	if len(api.bookedUserIDs) != 1 || api.bookedUserIDs[0] != "oc_g1" {
+		t.Errorf("bookedUserIDs = %v", api.bookedUserIDs)
+	}
+}
+
+func TestBookRoomOpenIDOnlyIdentityAborts(t *testing.T) {
+	api := bookableAPI()
+	api.currentUser = &feishu.UserIdentity{OpenID: "ou_me"} // 权限降级：无 user_id
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusNoParticipants {
+		t.Errorf("Status = %s, want no_participants（open_id 无法作为 user_id 参会人）", got.Status)
+	}
+}
+
+func TestBookRoomPartialResolveContinues(t *testing.T) {
+	api := bookableAPI()
+	s := newTestService(t, api)
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusBooked {
+		t.Fatalf("Status = %s, want booked（部分解析失败仍继续）", got.Status)
+	}
+	if len(got.ParticipantsUnresolved) != 1 || got.ParticipantsUnresolved[0] != "ghost" {
+		t.Errorf("ParticipantsUnresolved = %v, want [ghost]", got.ParticipantsUnresolved)
+	}
+	if got.ParticipantsResolved != 1 {
+		t.Errorf("ParticipantsResolved = %d, want 1（仅授权用户）", got.ParticipantsResolved)
+	}
+}
+
+func TestAutoBookNoParticipantsIsolatedPerTask(t *testing.T) {
+	api := bookableAPI()
+	api.noCurrentUser = true
+	s := newTestService(t, api)
+	s.Cfg.TaskFormat = "fri,11:00:00-12:00:00,weekly,ghost,A|fri,14:00:00-15:00:00,weekly,oc_g1,B"
+
+	results, err := s.AutoBook(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("应产生批量结果")
+	}
+	for _, r := range results {
+		switch r.Title {
+		case "A":
+			if r.Status != StatusNoParticipants {
+				t.Errorf("任务 A 应为 no_participants: %+v", r)
+			}
+		case "B":
+			if r.Status != StatusBooked {
+				t.Errorf("任务 B 不应受任务 A 影响: %+v", r)
+			}
+		}
 	}
 }
 

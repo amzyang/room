@@ -31,7 +31,8 @@ TASK_FORMAT 语法（多任务用 | 分隔）：
 
 默认真实批量预订；加全局 --dryrun 演练（只输出计划，不执行）。
 --json 输出逐条结果 results[].status：planned（--dryrun 演练）/ booked / no_room /
-conflict / holiday_skipped / failed；批量语义整体 exit 0，靠 status 区分单条结果。`,
+conflict / holiday_skipped / no_participants / failed；批量语义整体 exit 0，
+靠 status 区分单条结果。room login 的授权用户会自动加入每条任务的参会人。`,
 		Example: `  room auto --dryrun   # 演练：查看将要预订哪些时段
   room auto --json`,
 		Args: validationArgs(cobra.NoArgs),
@@ -672,11 +673,17 @@ func emitLoginOK(w io.Writer, token *feishu.StoredUserToken, asJSON bool) error 
 		return output.WriteSuccess(w, struct {
 			Event          string `json:"event"`
 			OpenID         string `json:"open_id,omitempty"`
+			UserID         string `json:"user_id,omitempty"`
+			Name           string `json:"name,omitempty"`
 			Scope          string `json:"scope,omitempty"`
 			AuthExpireAtMs int64  `json:"auth_expire_at_ms,omitempty"`
-		}{"login_ok", token.OpenID, token.Scope, token.AuthExpireAt}, nil)
+		}{"login_ok", token.OpenID, token.UserID, token.Name, token.Scope, token.AuthExpireAt}, nil)
 	}
-	fmt.Fprintln(w, "登录成功，已保存用户凭证，后续预定将优先以用户身份执行")
+	who := ""
+	if token.Name != "" {
+		who = fmt.Sprintf("（%s）", token.Name)
+	}
+	fmt.Fprintf(w, "登录成功%s，已保存用户凭证，后续预定将优先以用户身份执行\n", who)
 	return nil
 }
 
@@ -749,7 +756,9 @@ func newBookCmd(a *app) *cobra.Command {
   - book 总是真实预订，不支持 --dryrun（传入会 exit 2，演练仅 auto 支持）
   - --json/非终端环境必须给全 -d 与 -t，缺失立即 exit 2 而非挂起
   - exit 0 ⟺ 房间订上了；未订到 exit 1，错误 type 区分：
-    no_room（无可用会议室）/ conflict（时段已有日程）/ holiday_skipped（节假日跳过）`,
+    no_room（无可用会议室）/ conflict（时段已有日程）/ holiday_skipped（节假日跳过）
+    / no_participants（无有效参会人，运行 room login 或补 -p）
+  - room login 的授权用户会自动加入参会人（无需在 -p 中重复）`,
 		Example: `  room book "明天下午3点 开发周会"
   room book -d 07-15 -t 14:00-15:00 -p "alice bob" --title 架构评审 --json
   room book -d 07-15 -t 14:00-15:00 -y`,
@@ -912,13 +921,7 @@ func newBookCmd(a *app) *cobra.Command {
 				return err
 			}
 
-			participantList := strings.Fields(participants)
-			taskOwner := env("TASK_OWNER")
-			if taskOwner != "" && !containsString(participantList, taskOwner) {
-				participantList = append(participantList, taskOwner)
-			}
-
-			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, participantList)
+			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, strings.Fields(participants))
 			if err != nil {
 				return err
 			}
@@ -955,6 +958,12 @@ func (a *app) emitBookResult(w io.Writer, r *booking.BookResult) error {
 		return output.Errf(output.TypeNoRoom,
 			"更换时间段重试，或调整 booking.room_list / booking.room_size / booking.room_level_id 配置",
 			"未找到可用会议室: %s %s-%s", r.Date, r.StartTime, r.EndTime).WithDetail(timeDetail)
+	case booking.StatusNoParticipants:
+		return output.Errf(output.TypeNoParticipants,
+			"运行 room login 让本人自动加入参会人；或用 -p 提供可解析的参会人（检查 booking.email_domain 配置）",
+			"无有效参会人，已放弃预订: %s %s-%s", r.Date, r.StartTime, r.EndTime).
+			WithDetail(map[string]any{"date": r.Date, "start_time": r.StartTime,
+				"end_time": r.EndTime, "participants_unresolved": r.ParticipantsUnresolved})
 	default:
 		// BookRoom 契约外的状态（planned/failed 或未来新增值）说明代码失同步，
 		// 报 internal 而非误导性的 no_room
@@ -974,15 +983,6 @@ func normalizeDate(date string, loc *time.Location) (string, error) {
 		return "", err
 	}
 	return t.Format("2006-01-02"), nil
-}
-
-func containsString(list []string, s string) bool {
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
 }
 
 var _ = context.Background

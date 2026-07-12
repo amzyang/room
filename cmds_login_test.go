@@ -79,6 +79,32 @@ func TestEmitLoginOKJSONNoTokenLeak(t *testing.T) {
 	}
 }
 
+func TestEmitLoginOKIncludesIdentity(t *testing.T) {
+	var buf bytes.Buffer
+	token := &feishu.StoredUserToken{
+		AccessToken: "u-secret-access", RefreshToken: "r-secret-refresh",
+		OpenID: "ou_1", UserID: "u_1", Name: "张三",
+	}
+	if err := emitLoginOK(&buf, token, true); err != nil {
+		t.Fatal(err)
+	}
+	got := unwrapData(t, buf.Bytes())
+	if got["user_id"] != "u_1" || got["name"] != "张三" {
+		t.Errorf("data 应含 user_id/name: %v", got)
+	}
+	if strings.Contains(buf.String(), "secret") {
+		t.Errorf("login_ok 事件泄漏 token:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	if err := emitLoginOK(&buf, token, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "张三") {
+		t.Errorf("文本输出应带姓名:\n%s", buf.String())
+	}
+}
+
 func TestClassifyLoginErr(t *testing.T) {
 	e := output.Classify(classifyLoginErr(feishu.ErrLoginExpired))
 	if e.Type != output.TypeAuth || !e.Retryable {

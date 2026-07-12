@@ -52,7 +52,7 @@ room cancel --event-id <event_id> --yes
   `{"ok":false,"error":{"type","message","hint","retryable","detail"}}`；
 - **`--json` 隐含非交互**：必填项缺失立即报错（exit 2），绝不挂起等待输入；
 - **退出码**：`0` 成功（book 的 exit 0 ⟺ 房间订上了）；`1` API/业务失败
-  （book 未订到细分 `error.type`：`no_room`/`conflict`/`holiday_skipped`）；
+  （book 未订到细分 `error.type`：`no_room`/`conflict`/`holiday_skipped`/`no_participants`）；
   `2` 参数校验；`3` 认证/配置缺失；`10` 需显式确认（加 `--yes`/`--force`）。
 
 ```bash
@@ -89,7 +89,10 @@ room login   # 完成用户授权
 - 全局 `--json`：输出机读事件信封（`app_registration` / `app_registered`）。
 
 `room login` 支持同样的 `--no-wait` / `--device-code` 两段式与 `--json` 事件
-（`device_authorization` / `login_ok`）。
+（`device_authorization` / `login_ok`）。登录成功会获取并保存当前用户身份
+（`open_id`/`user_id`/`name`），预订时自动将本人加入参会人（接替已移除的
+`booking.task_owner` 配置）；未登录且无可解析参会人的预订会以
+`no_participants` 拒绝。
 
 已有凭证时需加 `--force` 覆盖，会同时撤销旧应用的登录 token 并删除
 `~/.config/room/cache/feishu-user-token.json`，需重新 `room login`。
@@ -103,7 +106,7 @@ room login   # 完成用户授权
 room config list                      # 全部配置项的生效值与来源（secret 掩码）
 room config set feishu.app_id cli_x   # 写入全局配置（KEY 也接受环境变量名 FEISHU_APP_ID）
 room config set booking.room_level_id # 省略 VALUE：拉取飞书会议室层级树，多级下钻交互选择
-room config get TASK_OWNER            # 打印生效值（--source 附加来源）
+room config get EMAIL_DOMAIN          # 打印生效值（--source 附加来源）
 room config unset booking.room_size   # 从全局配置删除
 room config path                      # 打印全局配置文件路径
 # 以上子命令均支持 --json 信封输出
@@ -135,7 +138,6 @@ room config path                      # 打印全局配置文件路径
 | 变量 | 说明 |
 |---|---|
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书自建应用凭据 |
-| `TASK_OWNER` | 负责人邮箱前缀，自动加入所有会议 |
 | `ROOM_LIST` | 会议室优先级列表（逗号分隔） |
 
 常用可选项：`ROOM_LEVEL_ID`（按楼层层级查找）、`ROOM_EXCLUDE_LIST`、`ROOM_SIZE`、

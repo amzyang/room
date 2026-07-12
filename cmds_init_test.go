@@ -165,7 +165,7 @@ func TestSaveAppCredentials(t *testing.T) {
 	t.Run("文本模式保留已有配置", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.toml")
 		doc := config.NewDocument()
-		doc.Values["TASK_OWNER"] = "keepme"
+		doc.Values["EMAIL_DOMAIN"] = "keepme"
 		if err := config.WriteFile(path, doc); err != nil {
 			t.Fatal(err)
 		}
@@ -180,7 +180,7 @@ func TestSaveAppCredentials(t *testing.T) {
 		if got.Values["FEISHU_APP_ID"] != "cli_new" || got.Values["FEISHU_APP_SECRET"] != "sec_new" {
 			t.Errorf("凭证未写入 TOML: %v", got.Values)
 		}
-		if got.Values["TASK_OWNER"] != "keepme" {
+		if got.Values["EMAIL_DOMAIN"] != "keepme" {
 			t.Errorf("已有配置项被覆盖丢失: %v", got.Values)
 		}
 		out := buf.String()

@@ -188,7 +188,7 @@ func TestLevelSelectOptionsError(t *testing.T) {
 
 func TestConfigSetSingleArgOnlyRoomLevel(t *testing.T) {
 	a := newConfigTestApp(t.TempDir()+"/config.toml", nil)
-	_, _, err := execConfigCmd(t, a, "set", "booking.task_owner")
+	_, _, err := execConfigCmd(t, a, "set", "booking.email_domain")
 	if err == nil {
 		t.Fatal("其他 key 省略 VALUE 应报错")
 	}

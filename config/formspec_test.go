@@ -139,12 +139,12 @@ func TestBuildFormSpecValidate(t *testing.T) {
 func TestApplyFormResult(t *testing.T) {
 	doc := NewDocument()
 	doc.Values["SENTRY_DSN"] = "" // 显式空
-	doc.Values["TASK_OWNER"] = "old_owner"
+	doc.Values["TIANAPI_KEY"] = "old_key"
 	doc.Values["ROOM_LEVEL_ID"] = "lvl_old"
 
 	err := ApplyFormResult(doc, map[string]string{
 		"SENTRY_DSN":    "",        // 显式空保留
-		"TASK_OWNER":    "",        // 已设置的清空 = unset
+		"TIANAPI_KEY":   "",        // 已设置的清空 = unset
 		"ROOM_LEVEL_ID": "lvl_new", // 覆盖
 		"ROOM_LIST":     " A , B ", // 规范化
 		"EMAIL_DOMAIN":  "",        // 本就未设置,保持未设置
@@ -155,7 +155,7 @@ func TestApplyFormResult(t *testing.T) {
 	if v, ok := doc.Values["SENTRY_DSN"]; !ok || v != "" {
 		t.Error("显式空应保留")
 	}
-	if _, ok := doc.Values["TASK_OWNER"]; ok {
+	if _, ok := doc.Values["TIANAPI_KEY"]; ok {
 		t.Error("清空已设置项应删除")
 	}
 	if doc.Values["ROOM_LEVEL_ID"] != "lvl_new" {

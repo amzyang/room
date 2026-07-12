@@ -53,8 +53,7 @@ func ParseParticipants(s string) []string {
 
 // ParseTaskFormat 解析 TASK_FORMAT DSL：
 // dayOfWeek,startTime-endTime,frequency[:interval[:startDate]],participants,title，多任务用 | 分隔。
-// taskOwner 非空时自动追加到每条任务的参与者列表。
-func ParseTaskFormat(taskFormat, taskOwner string) []Task {
+func ParseTaskFormat(taskFormat string) []Task {
 	var tasks []Task
 	for _, taskStr := range strings.Split(taskFormat, "|") {
 		if strings.TrimSpace(taskStr) == "" {
@@ -90,9 +89,6 @@ func ParseTaskFormat(taskFormat, taskOwner string) []Task {
 		}
 
 		participantList := ParseParticipants(participants)
-		if taskOwner != "" && !contains(participantList, taskOwner) {
-			participantList = append(participantList, taskOwner)
-		}
 
 		tasks = append(tasks, Task{
 			Title:        title,

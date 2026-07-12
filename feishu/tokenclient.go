@@ -59,6 +59,7 @@ type TokenClient interface {
 	RequestDeviceAuthorization(ctx context.Context, scope string) (*DeviceAuthorization, error)
 	PollDeviceToken(ctx context.Context, deviceCode string) (*DevicePollResult, error)
 	RefreshUserToken(ctx context.Context, refreshToken string) (*UserTokenResult, error)
+	GetUserInfo(ctx context.Context, accessToken string) (*UserIdentity, error)
 }
 
 // OAuthClient TokenClient 的 HTTP 实现。
@@ -67,7 +68,8 @@ type OAuthClient struct {
 	AppID     string
 	AppSecret string
 
-	revokeURL string // 测试缝隙：空走 oauthRevokeURL
+	revokeURL   string // 测试缝隙：空走 oauthRevokeURL
+	userInfoURL string // 测试缝隙：空走 authUserInfoURL
 }
 
 // RevokeToken 撤销一枚已签发的 OAuth token（best-effort 登出/换应用用）。

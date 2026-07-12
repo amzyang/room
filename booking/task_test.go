@@ -29,7 +29,7 @@ func TestParseParticipants(t *testing.T) {
 }
 
 func TestParseTaskFormat(t *testing.T) {
-	tasks := ParseTaskFormat("fri,11:00:00-12:00:00,weekly,alice:bob,项目周会", "owner")
+	tasks := ParseTaskFormat("fri,11:00:00-12:00:00,weekly,alice:bob,项目周会")
 	if len(tasks) != 1 {
 		t.Fatalf("got %d tasks, want 1", len(tasks))
 	}
@@ -38,35 +38,34 @@ func TestParseTaskFormat(t *testing.T) {
 		task.Frequency != "weekly" || task.Interval != 1 || task.StartDate != "" || task.Title != "项目周会" {
 		t.Errorf("unexpected task: %+v", task)
 	}
-	if !reflect.DeepEqual(task.Participants, []string{"alice", "bob", "owner"}) {
+	if !reflect.DeepEqual(task.Participants, []string{"alice", "bob"}) {
 		t.Errorf("participants = %v", task.Participants)
 	}
 
 	// interval + startDate
-	tasks = ParseTaskFormat("mon,17:30:00-18:30:00,weekly:2:2025-04-21,alice,AI例会", "alice")
+	tasks = ParseTaskFormat("mon,17:30:00-18:30:00,weekly:2:2025-04-21,alice,AI例会")
 	task = tasks[0]
 	if task.Frequency != "weekly" || task.Interval != 2 || task.StartDate != "2025-04-21" {
 		t.Errorf("unexpected freq config: %+v", task)
 	}
-	// owner 已在列表中不重复追加
 	if !reflect.DeepEqual(task.Participants, []string{"alice"}) {
 		t.Errorf("participants = %v", task.Participants)
 	}
 
 	// 非法 interval 回退 1；非法 startDate 置空
-	task = ParseTaskFormat("mon,09:00:00-10:00:00,weekly:0:not-a-date,,X", "")[0]
+	task = ParseTaskFormat("mon,09:00:00-10:00:00,weekly:0:not-a-date,,X")[0]
 	if task.Interval != 1 || task.StartDate != "" {
 		t.Errorf("invalid freq parts should fall back: %+v", task)
 	}
 
 	// 多任务
-	tasks = ParseTaskFormat("fri,09:00:00-09:30:00,weekly,,A|mon,10:00:00-11:00:00,daily,,B", "")
+	tasks = ParseTaskFormat("fri,09:00:00-09:30:00,weekly,,A|mon,10:00:00-11:00:00,daily,,B")
 	if len(tasks) != 2 || tasks[0].Title != "A" || tasks[1].Title != "B" {
 		t.Errorf("multi-task parse failed: %+v", tasks)
 	}
 
 	// 空任务段跳过
-	if got := ParseTaskFormat(" | ", ""); got != nil {
+	if got := ParseTaskFormat(" | "); got != nil {
 		t.Errorf("blank tasks should be skipped, got %+v", got)
 	}
 }

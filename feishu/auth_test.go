@@ -22,6 +22,10 @@ type fakeTokenClient struct {
 	refreshResult *UserTokenResult
 	refreshErr    error
 	refreshCalls  int
+
+	userInfoResult *UserIdentity
+	userInfoErr    error
+	userInfoCalls  int
 }
 
 func (f *fakeTokenClient) VerifyTenantCredentials(context.Context) error { return nil }
@@ -34,6 +38,13 @@ func (f *fakeTokenClient) PollDeviceToken(context.Context, string) (*DevicePollR
 func (f *fakeTokenClient) RefreshUserToken(context.Context, string) (*UserTokenResult, error) {
 	f.refreshCalls++
 	return f.refreshResult, f.refreshErr
+}
+func (f *fakeTokenClient) GetUserInfo(context.Context, string) (*UserIdentity, error) {
+	f.userInfoCalls++
+	if f.userInfoResult == nil && f.userInfoErr == nil {
+		return &UserIdentity{}, nil
+	}
+	return f.userInfoResult, f.userInfoErr
 }
 
 func newTestAuth(mode AuthMode, store UserTokenStore, client TokenClient, nowMs int64) *Auth {
@@ -117,6 +128,146 @@ func TestUserAccessTokenRefreshExpired(t *testing.T) {
 	}
 	if client.refreshCalls != 0 {
 		t.Error("dead refresh token should not attempt refresh")
+	}
+}
+
+func identityToken() *StoredUserToken {
+	token := validToken()
+	token.OpenID = "ou_old"
+	token.UserID = "u_old"
+	token.Name = "旧账号"
+	return token
+}
+
+func TestRefreshIdentityOverwrites(t *testing.T) {
+	store := &memoryStore{token: identityToken()}
+	client := &fakeTokenClient{userInfoResult: &UserIdentity{OpenID: "ou_new", UserID: "u_new", Name: "新账号"}}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	got, err := auth.RefreshIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OpenID != "ou_new" || got.UserID != "u_new" || got.Name != "新账号" {
+		t.Errorf("identity 未覆盖: %+v", got)
+	}
+	if store.token.UserID != "u_new" {
+		t.Errorf("identity 未持久化: %+v", store.token)
+	}
+	if store.token.AccessToken != "valid-access" {
+		t.Errorf("token 字段被破坏: %+v", store.token)
+	}
+}
+
+func TestRefreshIdentityFailureClears(t *testing.T) {
+	store := &memoryStore{token: identityToken()}
+	client := &fakeTokenClient{userInfoErr: errors.New("boom")}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	if _, err := auth.RefreshIdentity(context.Background()); err == nil {
+		t.Fatal("want error")
+	}
+	if store.token.OpenID != "" || store.token.UserID != "" || store.token.Name != "" {
+		t.Errorf("失败应清空旧身份防止换账号残留: %+v", store.token)
+	}
+	if store.token.AccessToken != "valid-access" {
+		t.Errorf("token 字段被破坏: %+v", store.token)
+	}
+}
+
+func TestUserIdentityFromStore(t *testing.T) {
+	client := &fakeTokenClient{}
+	auth := newTestAuth(AuthModeAuto, &memoryStore{token: identityToken()}, client, nowMs)
+
+	got := auth.UserIdentity(context.Background())
+	if got == nil || got.UserID != "u_old" || got.Name != "旧账号" {
+		t.Errorf("identity = %+v, want 存储中的身份", got)
+	}
+	if client.userInfoCalls != 0 {
+		t.Error("存储已有身份不应发起网络请求")
+	}
+}
+
+func TestUserIdentityLazyBackfill(t *testing.T) {
+	store := &memoryStore{token: validToken()}
+	client := &fakeTokenClient{userInfoResult: &UserIdentity{OpenID: "ou_1", UserID: "u_1", Name: "张三"}}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	got := auth.UserIdentity(context.Background())
+	if got == nil || got.UserID != "u_1" {
+		t.Fatalf("identity = %+v, want backfill 结果", got)
+	}
+	if store.token.UserID != "u_1" || store.token.OpenID != "ou_1" {
+		t.Errorf("backfill 应回写存储: %+v", store.token)
+	}
+	if client.userInfoCalls != 1 {
+		t.Errorf("userInfoCalls = %d, want 1", client.userInfoCalls)
+	}
+}
+
+func TestUserIdentityBackfillAfterRefreshKeepsNewToken(t *testing.T) {
+	expired := validToken()
+	expired.AccessExpireAt = nowMs - 1000
+	store := &memoryStore{token: expired}
+	client := &fakeTokenClient{
+		refreshResult: &UserTokenResult{
+			AccessToken:         "new-access",
+			AccessExpiresInSec:  7200,
+			RefreshToken:        "new-refresh",
+			RefreshExpiresInSec: 30 * 24 * 3600,
+		},
+		userInfoResult: &UserIdentity{OpenID: "ou_1", UserID: "u_1", Name: "张三"},
+	}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	got := auth.UserIdentity(context.Background())
+	if got == nil || got.UserID != "u_1" {
+		t.Fatalf("identity = %+v, want backfill 结果", got)
+	}
+	if store.token.AccessToken != "new-access" {
+		t.Errorf("回写不得冲掉刚刷新的 access_token: %+v", store.token)
+	}
+	if store.token.UserID != "u_1" {
+		t.Errorf("identity 未回写: %+v", store.token)
+	}
+}
+
+func TestUserIdentityBackfillFailure(t *testing.T) {
+	client := &fakeTokenClient{userInfoErr: errors.New("boom")}
+	auth := newTestAuth(AuthModeAuto, &memoryStore{token: validToken()}, client, nowMs)
+
+	if got := auth.UserIdentity(context.Background()); got != nil {
+		t.Errorf("backfill 失败应返回 nil, got %+v", got)
+	}
+}
+
+func TestUserIdentityNoToken(t *testing.T) {
+	client := &fakeTokenClient{}
+	auth := newTestAuth(AuthModeAuto, &memoryStore{}, client, nowMs)
+
+	if got := auth.UserIdentity(context.Background()); got != nil {
+		t.Errorf("无凭证应返回 nil, got %+v", got)
+	}
+	if client.userInfoCalls != 0 {
+		t.Error("无凭证不应发起网络请求")
+	}
+}
+
+func TestRefreshPreservesIdentity(t *testing.T) {
+	expired := identityToken()
+	expired.AccessExpireAt = nowMs - 1000
+	store := &memoryStore{token: expired}
+	client := &fakeTokenClient{
+		refreshResult: &UserTokenResult{AccessToken: "new-access", AccessExpiresInSec: 7200,
+			RefreshToken: "new-refresh", RefreshExpiresInSec: 30 * 24 * 3600},
+	}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	if got := auth.UserAccessToken(context.Background()); got != "new-access" {
+		t.Fatalf("got %q, want new-access", got)
+	}
+	if store.token.OpenID != "ou_old" || store.token.UserID != "u_old" || store.token.Name != "旧账号" {
+		t.Errorf("刷新后身份字段丢失: %+v", store.token)
 	}
 }
 

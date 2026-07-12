@@ -152,10 +152,10 @@ func TestConfigUnset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	a := newConfigTestApp(path, nil)
 
-	if _, _, err := execConfigCmd(t, a, "set", "booking.task_owner", "alice"); err != nil {
+	if _, _, err := execConfigCmd(t, a, "set", "booking.email_domain", "corp.com"); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := execConfigCmd(t, a, "unset", "TASK_OWNER")
+	out, _, err := execConfigCmd(t, a, "unset", "EMAIL_DOMAIN")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,11 +166,47 @@ func TestConfigUnset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := doc.Values["TASK_OWNER"]; ok {
+	if _, ok := doc.Values["EMAIL_DOMAIN"]; ok {
 		t.Error("unset 后 key 仍在文件中")
 	}
 
-	out, _, err = execConfigCmd(t, a, "unset", "TASK_OWNER")
+	out, _, err = execConfigCmd(t, a, "unset", "EMAIL_DOMAIN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "无需删除") {
+		t.Errorf("重复 unset 应提示 no-op: %q", out)
+	}
+}
+
+func TestConfigUnsetRemovedExtraKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := "[booking]\ntask_owner = \"alice\"\nemail_domain = \"corp.com\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newConfigTestApp(path, nil)
+
+	out, _, err := execConfigCmd(t, a, "unset", "booking.task_owner")
+	if err != nil {
+		t.Fatalf("已移除键残留在文件中时 unset 应可清理: %v", err)
+	}
+	if !strings.Contains(out, "已从") {
+		t.Errorf("unset 输出不符: %q", out)
+	}
+	doc, err := config.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Extra["booking"]["task_owner"]; ok {
+		t.Error("unset 后 task_owner 仍残留在未识别项中")
+	}
+	if doc.Values["EMAIL_DOMAIN"] != "corp.com" {
+		t.Errorf("其余配置不应受影响: %v", doc.Values)
+	}
+
+	// 幂等：再次 unset 提示无需删除
+	out, _, err = execConfigCmd(t, a, "unset", "TASK_OWNER") // env 旧称同样可用
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,23 +292,23 @@ func TestConfigSetUnsetPathJSON(t *testing.T) {
 	a := newConfigTestApp(path, nil)
 	a.jsonOut = true
 
-	out, _, err := execConfigCmd(t, a, "set", "booking.task_owner", "alice")
+	out, _, err := execConfigCmd(t, a, "set", "booking.email_domain", "corp.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := unwrapData(t, []byte(out))
-	if got["key"] != "booking.task_owner" || got["value"] != "alice" || got["path"] != path {
+	if got["key"] != "booking.email_domain" || got["value"] != "corp.com" || got["path"] != path {
 		t.Errorf("set data 不符: %v", got)
 	}
 
-	out, _, err = execConfigCmd(t, a, "unset", "booking.task_owner")
+	out, _, err = execConfigCmd(t, a, "unset", "booking.email_domain")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := unwrapData(t, []byte(out)); got["removed"] != true {
 		t.Errorf("unset 已存在项 removed 应为 true: %v", got)
 	}
-	out, _, err = execConfigCmd(t, a, "unset", "booking.task_owner")
+	out, _, err = execConfigCmd(t, a, "unset", "booking.email_domain")
 	if err != nil {
 		t.Fatal(err)
 	}

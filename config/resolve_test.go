@@ -3,17 +3,18 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestResolveLayering(t *testing.T) {
 	shell := map[string]string{
 		"FEISHU_APP_ID": "shell_id",
-		"EMAIL_DOMAIN":  `"quoted.com"`, // 生效值应经 CleanEnvValue 清洗
+		"TASK_FORMAT":   `"fri,11:00:00-12:00:00,weekly,,X"`, // 生效值应经 CleanEnvValue 清洗
 	}
 	tomlVals := map[string]string{
 		"FEISHU_APP_ID": "toml_id",
-		"TASK_OWNER":    "toml_owner",
+		"EMAIL_DOMAIN":  "toml.com",
 		"ROOM_LIST":     "A,B",
 		"SENTRY_DSN":    "", // TOML 显式空:注入后 LookupEnv 可见,禁用编译内置
 	}
@@ -22,10 +23,10 @@ func TestResolveLayering(t *testing.T) {
 
 	wantEntries := map[string]Entry{
 		"FEISHU_APP_ID": {"shell_id", SourceShellEnv}, // shell 压 TOML
-		"TASK_OWNER":    {"toml_owner", SourceTOML},
+		"EMAIL_DOMAIN":  {"toml.com", SourceTOML},
 		"ROOM_LIST":     {"A,B", SourceTOML},
 		"SENTRY_DSN":    {"", SourceTOML},
-		"EMAIL_DOMAIN":  {"quoted.com", SourceShellEnv},
+		"TASK_FORMAT":   {"fri,11:00:00-12:00:00,weekly,,X", SourceShellEnv},
 		"MODEL":         {"claude-4.6-opus", SourceDefault}, // 默认值层
 		"ROOM_LEVEL_ID": {"", SourceUnset},
 	}
@@ -36,7 +37,7 @@ func TestResolveLayering(t *testing.T) {
 	}
 
 	// 只注入「TOML 层生效」的 key:被 shell 压住的不注入,默认值绝不注入
-	wantInject := map[string]string{"TASK_OWNER": "toml_owner", "ROOM_LIST": "A,B", "SENTRY_DSN": ""}
+	wantInject := map[string]string{"EMAIL_DOMAIN": "toml.com", "ROOM_LIST": "A,B", "SENTRY_DSN": ""}
 	if len(inject) != len(wantInject) {
 		t.Errorf("inject = %v, want %v", inject, wantInject)
 	}
@@ -83,14 +84,14 @@ func TestBootstrap(t *testing.T) {
 	tomlPath := filepath.Join(dir, "config.toml")
 
 	doc := NewDocument()
-	doc.Values["TASK_OWNER"] = "from_toml"
+	doc.Values["EMAIL_DOMAIN"] = "from_toml"
 	doc.Values["ROOM_LEVEL_ID"] = "lvl_toml"
 	doc.Values["SENTRY_DSN"] = ""
 	if err := WriteFile(tomlPath, doc); err != nil {
 		t.Fatal(err)
 	}
 
-	clearEnv(t, "TASK_OWNER", "ROOM_LEVEL_ID", "SENTRY_DSN")
+	clearEnv(t, "EMAIL_DOMAIN", "ROOM_LEVEL_ID", "SENTRY_DSN")
 	t.Setenv("FEISHU_APP_ID", "from_shell")
 
 	r := Bootstrap(tomlPath)
@@ -98,8 +99,8 @@ func TestBootstrap(t *testing.T) {
 	if r.Warning != "" {
 		t.Fatalf("不应有告警: %s", r.Warning)
 	}
-	if got := os.Getenv("TASK_OWNER"); got != "from_toml" {
-		t.Errorf("TASK_OWNER = %q, want from_toml(TOML 注入)", got)
+	if got := os.Getenv("EMAIL_DOMAIN"); got != "from_toml" {
+		t.Errorf("EMAIL_DOMAIN = %q, want from_toml(TOML 注入)", got)
 	}
 	if got := os.Getenv("ROOM_LEVEL_ID"); got != "lvl_toml" {
 		t.Errorf("ROOM_LEVEL_ID = %q, want lvl_toml(TOML 注入)", got)
@@ -112,6 +113,25 @@ func TestBootstrap(t *testing.T) {
 	}
 	if src := r.OverrideOf("FEISHU_APP_ID"); src != SourceShellEnv {
 		t.Errorf("OverrideOf(FEISHU_APP_ID) = %v, want SourceShellEnv", src)
+	}
+}
+
+func TestBootstrapWarnsRemovedTaskOwner(t *testing.T) {
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "config.toml")
+	content := "[booking]\ntask_owner = \"alice\"\n"
+	if err := os.WriteFile(tomlPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clearEnv(t, "TASK_OWNER")
+
+	r := Bootstrap(tomlPath)
+
+	if !strings.Contains(r.Warning, "task_owner") || !strings.Contains(r.Warning, "room config unset") {
+		t.Errorf("残留已移除键应产生带清理指引的告警: %q", r.Warning)
+	}
+	if _, ok := os.LookupEnv("TASK_OWNER"); ok {
+		t.Error("已移除键不应注入进程 env")
 	}
 }
 

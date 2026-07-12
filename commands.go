@@ -61,7 +61,7 @@ Agent/脚本快速上手（全程非交互）：
 
 退出码：
   0  成功（book 的 exit 0 ⟺ 房间订上了）
-  1  API/业务失败（book 未订到细分 error.type: no_room/conflict/holiday_skipped）
+  1  API/业务失败（book 未订到细分 error.type: no_room/conflict/holiday_skipped/no_participants）
   2  参数校验失败
   3  认证/配置缺失
   10 需显式确认（加 --yes / --force）`,

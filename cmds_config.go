@@ -23,7 +23,7 @@ func newConfigCmd(a *app) *cobra.Command {
 			"get/set/list/unset/path 均支持 --json 输出信封（secret 值在 set/list 中掩码）。",
 		Example: `  room config list --json
   room config get feishu.app_id --json
-  room config set booking.task_owner alice
+  room config set booking.email_domain example.com
   room config set booking.room_level_id        # 终端下交互式层级选择`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// --json 下人类帮助文本会污染机读 stdout，fail-fast 指引子命令
@@ -260,17 +260,35 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 		Short: "从 config.toml 删除一项配置",
 		Args:  validationArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			tomlKey, envKey := "", ""
 			it, err := lookupItem(args[0])
-			if err != nil {
+			switch {
+			case err == nil:
+				tomlKey, envKey = it.TOMLKey(), it.EnvKey
+			case config.RemovedTOMLKey(args[0]) != "":
+				// 已移除 schema 的键可能残留在 config.toml 的未识别项中，同样允许清理
+				tomlKey = config.RemovedTOMLKey(args[0])
+			default:
 				return err
 			}
+
 			doc, err := config.ReadFile(a.cfg.Path)
 			if err != nil {
 				return fmt.Errorf("读取 %s 失败: %w", a.cfg.Path, err)
 			}
-			_, existed := doc.Values[it.EnvKey]
+			existed := false
+			if envKey != "" {
+				_, existed = doc.Values[envKey]
+				delete(doc.Values, envKey)
+			} else {
+				section, key, _ := strings.Cut(tomlKey, ".")
+				_, existed = doc.Extra[section][key]
+				delete(doc.Extra[section], key)
+				if len(doc.Extra[section]) == 0 {
+					delete(doc.Extra, section)
+				}
+			}
 			if existed {
-				delete(doc.Values, it.EnvKey)
 				if err := config.WriteFile(a.cfg.Path, doc); err != nil {
 					return err
 				}
@@ -278,16 +296,16 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 			if a.jsonOut {
 				return output.WriteSuccess(cmd.OutOrStdout(), struct {
 					Key     string `json:"key"`
-					Env     string `json:"env"`
+					Env     string `json:"env,omitempty"`
 					Path    string `json:"path"`
 					Removed bool   `json:"removed"` // false 表示本来就未设置（幂等成功）
-				}{it.TOMLKey(), it.EnvKey, a.cfg.Path, existed}, nil)
+				}{tomlKey, envKey, a.cfg.Path, existed}, nil)
 			}
 			if !existed {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s 未在 %s 中设置，无需删除\n", it.TOMLKey(), a.cfg.Path)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s 未在 %s 中设置，无需删除\n", tomlKey, a.cfg.Path)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "已从 %s 删除 %s\n", a.cfg.Path, it.TOMLKey())
+			fmt.Fprintf(cmd.OutOrStdout(), "已从 %s 删除 %s\n", a.cfg.Path, tomlKey)
 			return nil
 		},
 	}

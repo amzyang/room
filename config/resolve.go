@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/amzyang/room/envutil"
 )
@@ -76,6 +77,30 @@ func resolve(shell, tomlVals map[string]string) (map[string]Entry, map[string]st
 	return entries, inject
 }
 
+// removedTOMLKeys 已移除配置项的墓碑表:残留在 config.toml 中时提示用户清理。
+var removedTOMLKeys = map[string]string{
+	"booking.task_owner": "已移除:room login 的授权用户会自动加入参会人",
+}
+
+// removedEnvKeys 已移除配置项的 env 旧称 → TOML key。
+var removedEnvKeys = map[string]string{
+	"TASK_OWNER": "booking.task_owner",
+}
+
+// RemovedTOMLKey 用户输入若命中已移除配置项(TOML key 或 env 旧称,大小写不敏感)
+// 返回其规范 TOML key,否则返回空串。供 config unset 清理残留的未识别项。
+func RemovedTOMLKey(arg string) string {
+	key := strings.TrimSpace(arg)
+	if strings.Contains(key, ".") {
+		lower := strings.ToLower(key)
+		if _, ok := removedTOMLKeys[lower]; ok {
+			return lower
+		}
+		return ""
+	}
+	return removedEnvKeys[strings.ToUpper(key)]
+}
+
 // Bootstrap 命令式外壳,进程启动时调用一次:
 // 快照 shell env → 读全局 TOML →
 // 把仅在 TOML 层生效的值注入进程 env,使现有 os.Getenv 调用点零改动。
@@ -94,6 +119,18 @@ func Bootstrap(tomlPath string) *Resolved {
 		r.Warning = fmt.Sprintf("配置文件 %s 解析失败,本次运行忽略该文件: %v", tomlPath, err)
 	} else {
 		tomlVals = doc.Values
+		for section, kvs := range doc.Extra {
+			for key := range kvs {
+				tomlKey := section + "." + key
+				if hint, ok := removedTOMLKeys[tomlKey]; ok {
+					warn := fmt.Sprintf("配置项 %s %s(可运行 room config unset %s 清理)", tomlKey, hint, tomlKey)
+					if r.Warning != "" {
+						warn = r.Warning + "; " + warn
+					}
+					r.Warning = warn
+				}
+			}
+		}
 	}
 
 	entries, inject := resolve(shell, tomlVals)

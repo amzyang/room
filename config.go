@@ -61,11 +61,6 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 			"运行 room init 自动创建应用，或 room config set feishu.app_id / feishu.app_secret 手动写入",
 			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
 	}
-	taskOwner := env("TASK_OWNER")
-	if taskOwner == "" {
-		return nil, output.Errf(output.TypeConfig,
-			"运行 room config set booking.task_owner <邮箱前缀> 设置", "缺失 TASK_OWNER 配置")
-	}
 	roomList := envutil.ParseEnvList(os.Getenv("ROOM_LIST"))
 	if len(roomList) == 0 {
 		return nil, output.Errf(output.TypeConfig,
@@ -83,7 +78,6 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 			RoomLevelID:     env("ROOM_LEVEL_ID"),
 			RoomSize:        envutil.ParseEnvInt(os.Getenv("ROOM_SIZE"), 0),
 			TaskFormat:      env("TASK_FORMAT"),
-			TaskOwner:       taskOwner,
 			EmailDomain:     env("EMAIL_DOMAIN"),
 			TianAPIKey:      env("TIANAPI_KEY"),
 		},

@@ -49,8 +49,6 @@ var Registry = []Item{
 		Desc: "飞书应用密钥"},
 	{EnvKey: "FEISHU_AUTH_MODE", Section: "feishu", Key: "auth_mode", Type: TypeEnum, Default: "auto", Enum: []string{"auto", "user", "tenant"},
 		Desc: "鉴权模式:auto(用户优先、应用兜底)/ user / tenant"},
-	{EnvKey: "TASK_OWNER", Section: "booking", Key: "task_owner", Type: TypeString, Required: true,
-		Desc: "任务负责人邮箱前缀(自动加入所有会议参与者)"},
 	{EnvKey: "ROOM_LIST", Section: "booking", Key: "room_list", Type: TypeList, Required: true,
 		Desc: "会议室优先级列表"},
 	{EnvKey: "ROOM_EXCLUDE_LIST", Section: "booking", Key: "room_exclude_list", Type: TypeList,

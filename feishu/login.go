@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"time"
@@ -47,7 +48,22 @@ func pollDeviceLogin(ctx context.Context, auth *Auth, deviceCode string, interva
 		}
 		switch result.Status {
 		case PollSuccess:
-			return auth.Persist(result.Token, auth.Store.Read()), nil
+			// 身份字段由随后的 RefreshIdentity 独占写入：继承旧记录身份会在
+			// 写入间隙进程中断时把上一账号残留给新 token，且非空身份不再触发
+			// lazy backfill，错配无法自愈
+			prev := auth.Store.Read()
+			if prev != nil {
+				p := *prev
+				p.OpenID, p.UserID, p.Name = "", "", ""
+				prev = &p
+			}
+			stored := auth.Persist(result.Token, prev)
+			if updated, err := auth.RefreshIdentity(ctx); err != nil {
+				auth.Log.Warn(fmt.Sprintf("获取用户身份失败（不影响登录，预订时将自动重试）: %v", err))
+			} else {
+				stored = updated
+			}
+			return stored, nil
 		case PollSlowDown:
 			interval += 5 * time.Second
 		}

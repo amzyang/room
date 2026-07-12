@@ -36,7 +36,7 @@ room 是基于飞书开放平台的会议室预订 CLI。本 skill 描述其机�
 | 码 | 含义 | 对应 error.type |
 |---|---|---|
 | 0 | 成功。**book 的 exit 0 ⟺ 房间真的订上了** | — |
-| 1 | API/业务失败，含 book 未订到 | `api` `no_room` `conflict` `holiday_skipped` `internal` |
+| 1 | API/业务失败，含 book 未订到 | `api` `no_room` `conflict` `holiday_skipped` `no_participants` `internal` |
 | 2 | 参数校验失败（含非交互缺必填 flag） | `validation` |
 | 3 | 认证或配置缺失 | `auth` `config` |
 | 10 | 需显式确认，加 `--yes` 或 `--force` 重试 | `confirmation_required` |
@@ -48,7 +48,7 @@ room 是基于飞书开放平台的会议室预订 CLI。本 skill 描述其机�
 ```bash
 room config list --json                        # 查看全部配置与来源（secret 掩码）
 room config get feishu.app_id --json           # 单项明文值（供脚本）
-room config set booking.task_owner alice --json
+room config set booking.email_domain corp.com --json
 room list -d 7 --json                          # data.events[].event_id 供 cancel 用
 room book -d 07-15 -t 14:00-15:00 --title 周会 -p "alice bob" --json
 room cancel --event-id <event_id> --yes --json # 幂等：已删除也 exit 0
@@ -68,10 +68,10 @@ room notify "文本" --json
    `room init --device-code <device_code> --json` → 凭证写入 config.toml。
    把 device_code 作为单个命令参数传入，**不要把 `data.resume_command` 整串交给
    shell 求值**（它来自网络响应，防篡改注入）。已有凭证会 exit 10，确认后加 `--force`。
-3. 用户授权（推荐，以本人身份订）：`room login --no-wait --json` → 同样两段式，
-   用 `data.device_code` 运行 `room login --device-code <device_code> --json`。
-4. 必填项：`room config set booking.task_owner <邮箱前缀>`、
-   `room config set booking.room_list <逗号分隔会议室名>`。
+3. 用户授权（推荐，以本人身份订，且预订时自动把本人加入参会人）：
+   `room login --no-wait --json` → 同样两段式，用 `data.device_code` 运行
+   `room login --device-code <device_code> --json`。成功信封带 `user_id`/`name`。
+4. 必填项：`room config set booking.room_list <逗号分隔会议室名>`。
 
 两段式适合 agent：第一段立即返回不阻塞，用户授权后第二段恢复。若你能长时间等待，
 也可直接跑阻塞模式（`room init --json` / `room login --json`），授权完成前进程不退出。
@@ -89,6 +89,9 @@ room book -d 07-15 -t 14:00-15:00 --title 架构评审 -p "alice bob" --json
     `booking.room_list` / `booking.room_size` / `booking.room_level_id`。
   - `conflict`：用户日历该时段已有日程 → `room list --json` 查看后换时间。
   - `holiday_skipped`：目标日期是节假日 → 换非节假日日期。
+  - `no_participants`：无有效参会人（未 `room login` 且 `-p` 为空或全部解析失败，
+    `detail.participants_unresolved` 列出失败项）→ 让用户 `room login`，或补
+    `-p` 并检查 `booking.email_domain` 配置。
 - 日期只写 `MM-DD` 会自动补当年年份；时间段格式 `HH:MM-HH:MM`。
 - 解析出的时间已过时（exit 2，detail 带 `parsed_date`）：自行换未来日期重试，
   不要期望 CLI 替你改期。
@@ -128,7 +131,7 @@ room book -d 07-15 -t 14:00-15:00 --dryrun --json
 - **`auto` 默认即真实批量预订**；`--dryrun` 演练（results[].status=planned）。
   拿不准配置是否正确时先 `room auto --dryrun --json` 看计划再真跑。
   批量整体 exit 0，逐条结果看 `data.results[].status`
-  （planned/booked/no_room/conflict/holiday_skipped/failed）。
+  （planned/booked/no_room/conflict/holiday_skipped/no_participants/failed）。
 - 全局 `--dryrun` 仅 auto 支持，其余命令传入直接 exit 2（绝不静默真实执行）。
 - 自然语言输入（`room book "明天下午3点 周会"`）依赖 `nlp.api_key` 配置且解析
   可能失败；agent 优先用显式 `-d/-t/--title`，把自然语言解析留给你自己完成。

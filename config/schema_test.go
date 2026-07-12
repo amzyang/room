@@ -52,6 +52,8 @@ func TestLookup(t *testing.T) {
 		{"FEISHU_USER_AUTH_SCOPE", "", true},
 		{"feishu.user_token_path", "", true}, // 已移除:凭证固定存缓存目录
 		{"FEISHU_USER_TOKEN_PATH", "", true},
+		{"booking.task_owner", "", true}, // 已移除:login 授权用户自动加入参会人
+		{"TASK_OWNER", "", true},
 	}
 	for _, tt := range tests {
 		it, err := Lookup(tt.arg)

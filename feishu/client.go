@@ -97,6 +97,9 @@ func NewAPI(cfg Config, httpClient *http.Client, log *slog.Logger, clock func() 
 // Auth 暴露鉴权管理器（login 命令编排使用）。
 func (a *API) Auth() *Auth { return a.auth }
 
+// CurrentUser 当前授权用户身份；无用户凭证或身份不可得时返回 nil（应用身份预订）。
+func (a *API) CurrentUser(ctx context.Context) *UserIdentity { return a.auth.UserIdentity(ctx) }
+
 // VerifyCredentials 校验应用凭据（tenant_access_token 可获取）。
 func (a *API) VerifyCredentials(ctx context.Context) error {
 	return a.auth.TokenClient.VerifyTenantCredentials(ctx)

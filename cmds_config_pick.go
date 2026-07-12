@@ -100,6 +100,35 @@ func pickRoomLevel(ctx context.Context, api levelLister, selectLevel selectLevel
 	}
 }
 
+// levelSelectOptions 把层级树 DFS 拍平为「路径 → ID」选项（TUI 下拉用）：
+// 中间层级也可选，Label 用 " / " 连接路径，保持 API 返回顺序。
+func levelSelectOptions(ctx context.Context, api levelLister) ([]config.Option, error) {
+	var walk func(parentID, prefix string) ([]config.Option, error)
+	walk = func(parentID, prefix string) ([]config.Option, error) {
+		children, err := api.GetRoomLevelChildren(ctx, parentID)
+		if err != nil {
+			return nil, err
+		}
+		var out []config.Option
+		for _, c := range children {
+			label := c.Name
+			if prefix != "" {
+				label = prefix + " / " + c.Name
+			}
+			out = append(out, config.Option{Label: label, Value: c.RoomLevelID})
+			if c.HasChild {
+				sub, err := walk(c.RoomLevelID, label)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, sub...)
+			}
+		}
+		return out, nil
+	}
+	return walk("", "")
+}
+
 // selectLevelHuh pickRoomLevel 的 huh 适配：一层菜单一个 Select。
 func selectLevelHuh(title string, opts []levelOption) (levelOption, error) {
 	idx := 0
@@ -132,13 +161,7 @@ func runConfigPickRoomLevel(cmd *cobra.Command, a *app) error {
 			"交互选择需要在终端中运行")
 	}
 
-	api := feishu.NewAPI(feishu.Config{
-		AppID:         appID,
-		AppSecret:     appSecret,
-		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
-		UserTokenPath: userTokenPath(),
-		Debug:         a.debug,
-	}, feishu.NewHTTPClient(), a.log, a.now, a.loc)
+	api := a.newFeishuAPI(feishu.NewHTTPClient())
 
 	level, err := pickRoomLevel(cmd.Context(), api, selectLevelHuh)
 	if err != nil {

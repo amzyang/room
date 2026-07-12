@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/feishu"
 	"github.com/amzyang/room/output"
 )
@@ -147,6 +148,40 @@ func TestPickRoomLevelAPIError(t *testing.T) {
 	api := &fakeLevelLister{err: boom}
 	_, err := pickRoomLevel(context.Background(), api, scriptedSelect(t))
 	if !errors.Is(err, boom) {
+		t.Errorf("API 错误应向上传递，实际: %v", err)
+	}
+}
+
+// levelSelectOptions 把层级树 DFS 拍平为「路径 → ID」选项(TUI 下拉用)。
+func TestLevelSelectOptions(t *testing.T) {
+	api := testLevelTree()
+	opts, err := levelSelectOptions(context.Background(), api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []config.Option{
+		{Label: "集团", Value: "L1"},
+		{Label: "集团 / A座", Value: "L2"},
+		{Label: "集团 / A座 / 3层", Value: "L3"},
+		{Label: "集团 / A座 / 4层", Value: "L4"},
+		{Label: "集团 / 多功能厅", Value: "R1"},
+	}
+	if len(opts) != len(want) {
+		t.Fatalf("选项数 = %d, want %d: %v", len(opts), len(want), opts)
+	}
+	for i, w := range want {
+		if opts[i] != w {
+			t.Errorf("opts[%d] = %+v, want %+v", i, opts[i], w)
+		}
+	}
+	if got := strings.Join(api.calls, ","); got != ",L1,L2" {
+		t.Errorf("API 调用序列不符: %v", api.calls)
+	}
+}
+
+func TestLevelSelectOptionsError(t *testing.T) {
+	boom := errors.New("boom")
+	if _, err := levelSelectOptions(context.Background(), &fakeLevelLister{err: boom}); !errors.Is(err, boom) {
 		t.Errorf("API 错误应向上传递，实际: %v", err)
 	}
 }

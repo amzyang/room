@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/amzyang/room/config"
+	"github.com/amzyang/room/feishu"
 )
 
 // runConfigTUI 分组表单编辑全部配置项，走完保存写回全局 config.toml。
@@ -24,7 +27,7 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	for k, e := range a.cfg.Entries {
 		effective[k] = e.Value
 	}
-	groups := config.BuildFormSpec(effective)
+	groups := config.BuildFormSpec(effective, a.loadLevelOptions(cmd))
 
 	strVals := map[string]*string{}
 	var huhGroups []*huh.Group
@@ -71,13 +74,34 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	return nil
 }
 
+// loadLevelOptions 表单打开前拉取会议室层级树拍平为下拉选项。降级契约:
+// 凭证缺失(首次配置的正常路径)与根为空静默返回 nil;拉取失败/超时 stderr 一行提示
+// 后返回 nil——任何情况都不挡住表单,nil 时 room_level_id 回退文本输入。
+func (a *app) loadLevelOptions(cmd *cobra.Command) []config.Option {
+	if env("FEISHU_APP_ID") == "" || env("FEISHU_APP_SECRET") == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+	defer cancel()
+	opts, err := levelSelectOptions(ctx, a.newFeishuAPI(feishu.NewHTTPClient()))
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "拉取会议室层级失败，room_level_id 使用文本输入: %v\n", err)
+		return nil
+	}
+	return opts
+}
+
 func buildHuhField(f config.FieldSpec, strVals map[string]*string) huh.Field {
 	switch f.Kind {
 	case config.FieldSelect:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
+		opts := make([]huh.Option[string], len(f.Options))
+		for i, o := range f.Options {
+			opts[i] = huh.NewOption(o.Label, o.Value)
+		}
 		return huh.NewSelect[string]().Title(f.Title).Description(f.Desc).
-			Options(huh.NewOptions(f.Options...)...).Value(&v)
+			Options(opts...).Value(&v)
 	case config.FieldText:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v

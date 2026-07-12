@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func findField(t *testing.T, groups []GroupSpec, envKey string) FieldSpec {
 }
 
 func TestBuildFormSpecCoversRegistry(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{})
+	groups := BuildFormSpec(map[string]string{}, nil)
 	if len(groups) != 4 {
 		t.Fatalf("分组数 = %d, want 4", len(groups))
 	}
@@ -36,7 +37,7 @@ func TestBuildFormSpecCoversRegistry(t *testing.T) {
 }
 
 func TestBuildFormSpecFieldKinds(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{})
+	groups := BuildFormSpec(map[string]string{}, nil)
 	tests := []struct {
 		env  string
 		kind FieldKind
@@ -57,13 +58,40 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Masked {
 		t.Error("app_id 不应掩码")
 	}
-	if f := findField(t, groups, "FEISHU_AUTH_MODE"); len(f.Options) != 3 {
-		t.Errorf("auth_mode 选项 = %v", f.Options)
+	if f := findField(t, groups, "FEISHU_AUTH_MODE"); len(f.Options) != 3 || f.Options[0] != (Option{Label: "auto", Value: "auto"}) {
+		t.Errorf("auth_mode 选项应为 label==value 的枚举 = %v", f.Options)
+	}
+}
+
+// room_level_id:注入层级选项时为下拉(首项「不限」空值),未注入时保持文本输入。
+func TestBuildFormSpecLevelOptions(t *testing.T) {
+	if f := findField(t, BuildFormSpec(map[string]string{}, nil), "ROOM_LEVEL_ID"); f.Kind != FieldInput {
+		t.Errorf("无层级选项时应为文本输入, got %v", f.Kind)
+	}
+
+	levels := []Option{{Label: "集团", Value: "L1"}, {Label: "集团 / A座", Value: "L2"}}
+	f := findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "L2"}, levels), "ROOM_LEVEL_ID")
+	if f.Kind != FieldSelect {
+		t.Fatalf("注入层级后应为下拉, got %v", f.Kind)
+	}
+	if f.Options[0] != (Option{Label: "（不限）", Value: ""}) {
+		t.Errorf("首项应为「（不限）」空值: %+v", f.Options[0])
+	}
+	if len(f.Options) != 3 || f.Initial != "L2" {
+		t.Errorf("选项应为 不限+层级树 且保留生效值: options=%v initial=%q", f.Options, f.Initial)
+	}
+
+	// 生效值不在树中(层级已删除):追加「(当前值)」项,否则 huh 会在用户直接
+	// 走过表单时把配置静默改成首个选项
+	f = findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "gone"}, levels), "ROOM_LEVEL_ID")
+	last := f.Options[len(f.Options)-1]
+	if last.Value != "gone" || !strings.Contains(last.Label, "当前值") {
+		t.Errorf("陈旧生效值应以「当前值」项保留: %v", f.Options)
 	}
 }
 
 func TestBuildFormSpecInitial(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{"FEISHU_APP_ID": "cli_x"})
+	groups := BuildFormSpec(map[string]string{"FEISHU_APP_ID": "cli_x"}, nil)
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Initial != "cli_x" {
 		t.Errorf("app_id Initial = %q", f.Initial)
 	}
@@ -74,7 +102,7 @@ func TestBuildFormSpecInitial(t *testing.T) {
 }
 
 func TestBuildFormSpecValidate(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{})
+	groups := BuildFormSpec(map[string]string{}, nil)
 	appID := findField(t, groups, "FEISHU_APP_ID")
 	if err := appID.Validate(""); err == nil {
 		t.Error("必填项空值应校验失败")

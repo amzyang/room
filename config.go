@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -30,6 +31,17 @@ func env(key string) string {
 // userTokenPath 用户凭证文件路径,固定在缓存目录下,不再可配。
 func userTokenPath() string {
 	return filepath.Join(config.CacheDir(), "feishu-user-token.json")
+}
+
+// newFeishuAPI 装配飞书 API 客户端(调用方先确保凭证已配置)。
+func (a *app) newFeishuAPI(httpClient *http.Client) *feishu.API {
+	return feishu.NewAPI(feishu.Config{
+		AppID:         env("FEISHU_APP_ID"),
+		AppSecret:     env("FEISHU_APP_SECRET"),
+		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
+		UserTokenPath: userTokenPath(),
+		Debug:         a.debug,
+	}, httpClient, a.log, a.now, a.loc)
 }
 
 // bookingService auto/book/list/cancel 命令依赖的服务能力（测试注入 fake）。
@@ -61,13 +73,7 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 	}
 
 	httpClient := feishu.NewHTTPClient()
-	api := feishu.NewAPI(feishu.Config{
-		AppID:         appID,
-		AppSecret:     appSecret,
-		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
-		UserTokenPath: userTokenPath(),
-		Debug:         a.debug,
-	}, httpClient, a.log, a.now, a.loc)
+	api := a.newFeishuAPI(httpClient)
 
 	service := &booking.Service{
 		API: api,

@@ -15,6 +15,12 @@ const (
 	FieldSelect
 )
 
+// Option Select 控件的一个选项;enum 场景 label==value,层级场景显示路径、写入 ID。
+type Option struct {
+	Label string
+	Value string
+}
+
 // FieldSpec 一个表单字段的中间表示。
 type FieldSpec struct {
 	Item     Item
@@ -22,7 +28,7 @@ type FieldSpec struct {
 	Title    string
 	Desc     string
 	Masked   bool     // secret 项掩码输入
-	Options  []string // 仅 FieldSelect
+	Options  []Option // 仅 FieldSelect
 	Initial  string   // 生效值预填
 	Validate func(string) error
 }
@@ -44,15 +50,16 @@ var formGroups = []struct {
 	{"通知与其他", []string{"notify", "sentry"}},
 }
 
-// BuildFormSpec 纯函数:schema + 生效值 → 表单中间表示。
-func BuildFormSpec(effective map[string]string) []GroupSpec {
+// BuildFormSpec 纯函数:schema + 生效值 + 会议室层级选项(可为 nil) → 表单中间表示。
+// levels 非空时 room_level_id 渲染为层级下拉,否则保持文本输入(凭证缺失/拉取失败的降级)。
+func BuildFormSpec(effective map[string]string, levels []Option) []GroupSpec {
 	var out []GroupSpec
 	for _, g := range formGroups {
 		spec := GroupSpec{Title: g.title}
 		for _, section := range g.sections {
 			for _, it := range Registry {
 				if it.Section == section {
-					spec.Fields = append(spec.Fields, buildField(it, effective[it.EnvKey]))
+					spec.Fields = append(spec.Fields, buildField(it, effective[it.EnvKey], levels))
 				}
 			}
 		}
@@ -61,7 +68,7 @@ func BuildFormSpec(effective map[string]string) []GroupSpec {
 	return out
 }
 
-func buildField(it Item, initial string) FieldSpec {
+func buildField(it Item, initial string, levels []Option) FieldSpec {
 	f := FieldSpec{
 		Item:    it,
 		Kind:    FieldInput,
@@ -80,9 +87,14 @@ func buildField(it Item, initial string) FieldSpec {
 		},
 	}
 	switch {
+	case it.EnvKey == "ROOM_LEVEL_ID" && len(levels) > 0:
+		f.Kind = FieldSelect
+		f.Options = levelOptions(levels, initial)
 	case it.Type == TypeEnum:
 		f.Kind = FieldSelect
-		f.Options = it.Enum
+		for _, e := range it.Enum {
+			f.Options = append(f.Options, Option{Label: e, Value: e})
+		}
 		if initial == "" {
 			f.Initial = it.Default
 		}
@@ -90,6 +102,18 @@ func buildField(it Item, initial string) FieldSpec {
 		f.Kind = FieldText
 	}
 	return f
+}
+
+// levelOptions 前置「（不限）」空值项;生效值不在树中(层级已删除)时追加「(当前值)」项,
+// 否则 huh Select 会在用户直接走过表单时把配置静默改成首个选项。
+func levelOptions(levels []Option, current string) []Option {
+	out := append([]Option{{Label: "（不限）"}}, levels...)
+	for _, o := range out {
+		if o.Value == current {
+			return out
+		}
+	}
+	return append(out, Option{Label: current + "（当前值）", Value: current})
 }
 
 // ApplyFormResult 表单结果合并进文档:非空值规范化写入(等于默认值也写,固化用户显式确认的值);

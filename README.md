@@ -120,6 +120,9 @@ room config path                      # 打印全局配置文件路径
 「改了不生效」时用 `room config list` 查看每项的实际来源；`set` 写入的项
 若被更高层覆盖会当场提示。
 
+终端下裸 `room config` 进入 TUI 表单编辑全部配置；其中 `booking.room_level_id`
+在凭证可用时为层级树下拉选择（含「不限」），凭证缺失或拉取失败时回退为文本输入。
+
 缓存（用户凭证、节假日、user_id 映射、自动预订记录）存于配置文件旁的
 `cache/` 目录（默认 `~/.config/room/cache/`，随 `ROOM_CONFIG` /
 `$XDG_CONFIG_HOME` 一同解析）。旧版遗留在工作目录下的 `.cache/`

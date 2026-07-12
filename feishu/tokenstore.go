@@ -8,7 +8,7 @@ import (
 )
 
 // StoredUserToken 本地持久化的用户身份凭证。
-// 过期时间为绝对毫秒时间戳（epoch ms），与 Node 版 .cache/feishu-user-token.json 格式互换。
+// 过期时间为绝对毫秒时间戳（epoch ms），与 Node 版 feishu-user-token.json 格式互换。
 type StoredUserToken struct {
 	AccessToken     string `json:"accessToken"`
 	AccessExpireAt  int64  `json:"accessExpireAt"`

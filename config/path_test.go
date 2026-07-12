@@ -47,3 +47,36 @@ func TestDefaultPathResolution(t *testing.T) {
 		}
 	}
 }
+
+// 缓存目录 = 配置文件所在目录 + cache,随 ROOM_CONFIG / XDG_CONFIG_HOME 走。
+func TestCacheDir(t *testing.T) {
+	getenv := func(m map[string]string) func(string) string {
+		return func(k string) string { return m[k] }
+	}
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "跟随 ROOM_CONFIG 所在目录",
+			env:  map[string]string{"ROOM_CONFIG": "/tmp/room-x/config.toml"},
+			want: filepath.Join("/tmp/room-x", "cache"),
+		},
+		{
+			name: "跟随 XDG_CONFIG_HOME",
+			env:  map[string]string{"XDG_CONFIG_HOME": "/xdg"},
+			want: filepath.Join("/xdg", "room", "cache"),
+		},
+		{
+			name: "默认 ~/.config/room/cache",
+			env:  map[string]string{},
+			want: filepath.Join("/home/u", ".config", "room", "cache"),
+		},
+	}
+	for _, tt := range tests {
+		if got := cacheDir(getenv(tt.env), "/home/u", "darwin"); got != tt.want {
+			t.Errorf("%s: cacheDir = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

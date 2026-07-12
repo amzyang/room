@@ -33,3 +33,14 @@ func defaultPath(getenv func(string) string, home, goos string) string {
 	}
 	return filepath.Join(home, ".config", "room", "config.toml")
 }
+
+// CacheDir 缓存目录(用户凭证、节假日、user_id 映射、自动预订记录):
+// 配置文件所在目录下的 cache/,随 ROOM_CONFIG / XDG_CONFIG_HOME 一同解析。
+func CacheDir() string {
+	home, _ := os.UserHomeDir()
+	return cacheDir(os.Getenv, home, runtime.GOOS)
+}
+
+func cacheDir(getenv func(string) string, home, goos string) string {
+	return filepath.Join(filepath.Dir(defaultPath(getenv, home, goos)), "cache")
+}

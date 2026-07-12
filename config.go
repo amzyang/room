@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/amzyang/room/booking"
 	"github.com/amzyang/room/config"
@@ -14,12 +15,8 @@ import (
 )
 
 const (
-	defaultCancelDays    = 31
-	defaultMeetingTitle  = "meeting"
-	defaultUserTokenPath = config.DefaultUserTokenPath
-	holidayCacheDir      = ".cache/holidays"
-	userIDCachePath      = ".cache/user_ids_lark.json"
-	autoBookingCachePath = ".cache/auto-booking-cache.json"
+	defaultCancelDays   = 31
+	defaultMeetingTitle = "meeting"
 
 	// userAuthScope login 固定申请的用户授权 scope,按本工具实际调用的 API 划定
 	// (offline_access 由 tokenclient 自动补)。
@@ -28,6 +25,11 @@ const (
 
 func env(key string) string {
 	return envutil.CleanEnvValue(os.Getenv(key))
+}
+
+// userTokenPath 用户凭证文件路径,固定在缓存目录下,不再可配。
+func userTokenPath() string {
+	return filepath.Join(config.CacheDir(), "feishu-user-token.json")
 }
 
 // bookingService auto/book/list/cancel 命令依赖的服务能力（测试注入 fake）。
@@ -58,17 +60,12 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 			"运行 room config set booking.room_list <逗号分隔的会议室名> 设置", "缺失 ROOM_LIST 配置")
 	}
 
-	userTokenPath := env("FEISHU_USER_TOKEN_PATH")
-	if userTokenPath == "" {
-		userTokenPath = defaultUserTokenPath
-	}
-
 	httpClient := feishu.NewHTTPClient()
 	api := feishu.NewAPI(feishu.Config{
 		AppID:         appID,
 		AppSecret:     appSecret,
 		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
-		UserTokenPath: userTokenPath,
+		UserTokenPath: userTokenPath(),
 		Debug:         a.debug,
 	}, httpClient, a.log, a.now, a.loc)
 
@@ -88,9 +85,9 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 		Clock:        a.now,
 		Loc:          a.loc,
 		HTTP:         httpClient,
-		HolidayCache: &booking.HolidayCache{Dir: holidayCacheDir},
-		UserIDs:      &booking.UserIDCache{Path: userIDCachePath},
-		AutoCache:    &booking.AutoBookingCache{Path: autoBookingCachePath},
+		HolidayCache: &booking.HolidayCache{Dir: filepath.Join(config.CacheDir(), "holidays")},
+		UserIDs:      &booking.UserIDCache{Path: filepath.Join(config.CacheDir(), "user_ids_lark.json")},
+		AutoCache:    &booking.AutoBookingCache{Path: filepath.Join(config.CacheDir(), "auto-booking-cache.json")},
 	}
 
 	mode := "执行模式"

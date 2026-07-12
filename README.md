@@ -92,7 +92,7 @@ room login   # 完成用户授权
 （`device_authorization` / `login_ok`）。
 
 已有凭证时需加 `--force` 覆盖，会同时撤销旧应用的登录 token 并删除
-`.cache/feishu-user-token.json`，需重新 `room login`。
+`~/.config/room/cache/feishu-user-token.json`，需重新 `room login`。
 
 注意：注册端点为未公开接口（考证自 lark-cli），仅支持飞书国内域
 （Lark 海外租户不支持）；如自动创建失败或遇权限报错，请退回下面的手动方式。
@@ -120,10 +120,14 @@ room config path                      # 打印全局配置文件路径
 「改了不生效」时用 `room config list` 查看每项的实际来源；`set` 写入的项
 若被更高层覆盖会当场提示。
 
+缓存（用户凭证、节假日、user_id 映射、自动预订记录）存于配置文件旁的
+`cache/` 目录（默认 `~/.config/room/cache/`，随 `ROOM_CONFIG` /
+`$XDG_CONFIG_HOME` 一同解析）。旧版遗留在工作目录下的 `.cache/`
+会在首次运行时自动整体迁移。
+
 ### 环境变量
 
-所有配置项也可用同名环境变量提供（优先级高于全局配置，Docker 部署经
-`docker run --env-file` 注入）。必填项：
+所有配置项也可用同名环境变量提供（优先级高于全局配置）。必填项：
 
 | 变量 | 说明 |
 |---|---|
@@ -161,20 +165,17 @@ TASK_FORMAT="fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,17:30:00-18
 [permissions.json](permissions.json)（针对应用身份 tenant 权限）。
 `room init` 自动创建的个人应用如遇权限类报错（如 99991672），请退回手动建应用并导入权限。
 用户身份预订需先运行 `room login` 完成 OAuth 设备码授权（凭证存于
-`.cache/feishu-user-token.json`，授权硬顶一年，到期需重新 login）。
+`~/.config/room/cache/feishu-user-token.json`，授权硬顶一年，到期需重新 login）。
 
 ## 定时任务部署
 
 ```bash
-# 构建镜像
-./build.sh
-
 # crontab：工作日每天 9 点自动订会（输出追加到 booking.log）
-0 9 * * 1-5 cd /path/to/room && ./run.sh >> booking.log 2>&1
+0 9 * * 1-5 room auto >> "$HOME/booking.log" 2>&1
 ```
 
-`run.sh` 通过 Docker 运行并挂载 `.cache/`（持久化用户凭证与节假日缓存），
-宿主机 `.cache/` 目录需对容器内 uid 1001 可写。
+配置与缓存均在 `~/.config/room/`（`config.toml` 与 `cache/`），
+任意工作目录均可运行。
 
 ## 开发
 

@@ -330,10 +330,7 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 		return err
 	}
 
-	tokenPath := env("FEISHU_USER_TOKEN_PATH")
-	if tokenPath == "" {
-		tokenPath = defaultUserTokenPath
-	}
+	tokenPath := userTokenPath()
 	reg := &feishu.AppRegistrar{HTTP: feishu.NewHTTPClient(), Log: a.log, Clock: a.now}
 
 	// 恢复轮询模式：用已有 device_code 直接轮询换取应用凭证
@@ -528,7 +525,7 @@ func newLoginCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "通过飞书 OAuth 设备码流程授权，保存用户身份凭证（用于以本人身份预定）",
-		Long: `OAuth 设备码流程授权用户身份，凭证存于 .cache/feishu-user-token.json。
+		Long: `OAuth 设备码流程授权用户身份，凭证存于配置目录旁的 cache/feishu-user-token.json。
 
 三种模式（与 init 同构）：
   默认      发起授权 → 打印授权链接（TTY 下尽力打开浏览器）→ 原地轮询到授权完成
@@ -571,16 +568,11 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
 	}
 
-	userTokenPath := env("FEISHU_USER_TOKEN_PATH")
-	if userTokenPath == "" {
-		userTokenPath = defaultUserTokenPath
-	}
-
 	httpClient := feishu.NewHTTPClient()
 	auth := &feishu.Auth{
 		Mode:        feishu.AuthModeAuto,
 		TokenClient: &feishu.OAuthClient{HTTP: httpClient, AppID: appID, AppSecret: appSecret},
-		Store:       &feishu.FileUserTokenStore{Path: userTokenPath},
+		Store:       &feishu.FileUserTokenStore{Path: userTokenPath()},
 		Clock:       a.now,
 		Log:         a.log,
 	}

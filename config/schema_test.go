@@ -50,6 +50,8 @@ func TestLookup(t *testing.T) {
 		{"ROOM_TLS_INSECURE", "", true},
 		{"feishu.user_auth_scope", "", true}, // 已移除:login 使用内置 scope
 		{"FEISHU_USER_AUTH_SCOPE", "", true},
+		{"feishu.user_token_path", "", true}, // 已移除:凭证固定存缓存目录
+		{"FEISHU_USER_TOKEN_PATH", "", true},
 	}
 	for _, tt := range tests {
 		it, err := Lookup(tt.arg)

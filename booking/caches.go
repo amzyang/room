@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// 缓存文件均与 Node 版 .cache/ 下的 JSON 格式互换（两缩进空格）。
+// 缓存文件均与 Node 版 JSON 格式互换（两缩进空格），路径由调用方注入（配置目录旁的 cache/）。
 
 // HolidayResponse tianapi 节假日接口响应；缓存时保留原始结构。
 type HolidayResponse struct {
@@ -32,7 +32,7 @@ type Holiday struct {
 	Rest     string `json:"rest"`
 }
 
-// HolidayCache 按年份缓存 tianapi 原始响应到 .cache/holidays/<year>.json。
+// HolidayCache 按年份缓存 tianapi 原始响应到 Dir 下的 <year>.json。
 type HolidayCache struct {
 	Dir string
 }
@@ -60,7 +60,7 @@ func (c *HolidayCache) Save(year string, resp *HolidayResponse) error {
 	return os.WriteFile(filepath.Join(c.Dir, year+".json"), data, 0o644)
 }
 
-// UserIDCache email 前缀 → 飞书 user_id 的持久化映射（.cache/user_ids_lark.json）。
+// UserIDCache email 前缀 → 飞书 user_id 的持久化映射（user_ids_lark.json）。
 type UserIDCache struct {
 	Path  string
 	cache map[string]string
@@ -91,7 +91,7 @@ func (c *UserIDCache) Set(username, userID string) error {
 	return os.WriteFile(c.Path, data, 0o644)
 }
 
-// AutoBookingCache 本工具创建过的事件 ID 集合（.cache/auto-booking-cache.json）。
+// AutoBookingCache 本工具创建过的事件 ID 集合（auto-booking-cache.json）。
 // 已取消但由本工具创建的事件仍视为时间段占用，避免重复预订。
 type AutoBookingCache struct {
 	Path     string

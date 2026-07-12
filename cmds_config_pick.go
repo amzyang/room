@@ -132,15 +132,11 @@ func runConfigPickRoomLevel(cmd *cobra.Command, a *app) error {
 			"交互选择需要在终端中运行")
 	}
 
-	userTokenPath := env("FEISHU_USER_TOKEN_PATH")
-	if userTokenPath == "" {
-		userTokenPath = defaultUserTokenPath
-	}
 	api := feishu.NewAPI(feishu.Config{
 		AppID:         appID,
 		AppSecret:     appSecret,
 		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
-		UserTokenPath: userTokenPath,
+		UserTokenPath: userTokenPath(),
 		Debug:         a.debug,
 	}, feishu.NewHTTPClient(), a.log, a.now, a.loc)
 

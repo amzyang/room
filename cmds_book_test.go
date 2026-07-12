@@ -231,3 +231,21 @@ func TestBookInvalidDateIsValidation(t *testing.T) {
 		t.Fatalf("非法日期应归 validation: %v", err)
 	}
 }
+
+// booking.BookStatus 与 output.ErrType 共用一套 agent 词汇表（auto 的
+// results[].status 与 book 的 error.type），字面量分居两包，靠此测试钉住同步。
+func TestBookStatusErrTypeVocabularyAligned(t *testing.T) {
+	pairs := []struct {
+		status  booking.BookStatus
+		errType output.ErrType
+	}{
+		{booking.StatusNoRoom, output.TypeNoRoom},
+		{booking.StatusConflict, output.TypeConflict},
+		{booking.StatusHolidaySkipped, output.TypeHolidaySkipped},
+	}
+	for _, p := range pairs {
+		if string(p.status) != string(p.errType) {
+			t.Errorf("词汇表失同步: booking %q != output %q", p.status, p.errType)
+		}
+	}
+}

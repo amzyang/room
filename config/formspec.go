@@ -25,8 +25,7 @@ type Option struct {
 type FieldSpec struct {
 	Item     Item
 	Kind     FieldKind
-	Title    string
-	Desc     string
+	Title    string   // 单行「文案[（必填）]  键名」
 	Masked   bool     // secret 项掩码输入
 	Options  []Option // 仅 FieldSelect
 	Initial  string   // 生效值预填
@@ -47,7 +46,8 @@ var formGroups = []struct {
 	{"飞书", []string{"feishu"}},
 	{"预订", []string{"booking"}},
 	{"NLP(book 命令自然语言解析)", []string{"nlp"}},
-	{"通知与其他", []string{"notify", "sentry"}},
+	// sentry.dsn 刻意不进 TUI(经 room config set 管理),避免误触改动错误上报
+	{"通知", []string{"notify"}},
 }
 
 // BuildFormSpec 纯函数:schema + 生效值 + 会议室层级选项(可为 nil) → 表单中间表示。
@@ -69,11 +69,14 @@ func BuildFormSpec(effective map[string]string, levels []Option) []GroupSpec {
 }
 
 func buildField(it Item, initial string, levels []Option) FieldSpec {
+	title := it.Desc
+	if it.Required {
+		title += "（必填）"
+	}
 	f := FieldSpec{
 		Item:    it,
 		Kind:    FieldInput,
-		Title:   it.TOMLKey(),
-		Desc:    it.Desc,
+		Title:   title + "  " + it.TOMLKey(),
 		Masked:  it.Secret,
 		Initial: initial,
 		Validate: func(s string) error {

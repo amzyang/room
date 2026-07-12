@@ -100,17 +100,15 @@ func buildHuhField(f config.FieldSpec, strVals map[string]*string) huh.Field {
 		for i, o := range f.Options {
 			opts[i] = huh.NewOption(o.Label, o.Value)
 		}
-		return huh.NewSelect[string]().Title(f.Title).Description(f.Desc).
-			Options(opts...).Value(&v)
+		return huh.NewSelect[string]().Title(f.Title).Options(opts...).Value(&v)
 	case config.FieldText:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
-		return huh.NewText().Title(f.Title).Description(f.Desc).Lines(3).
-			Value(&v).Validate(f.Validate)
+		return huh.NewText().Title(f.Title).Lines(3).Value(&v).Validate(f.Validate)
 	default:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
-		in := huh.NewInput().Title(f.Title).Description(f.Desc).Value(&v).Validate(f.Validate)
+		in := huh.NewInput().Title(f.Title).Value(&v).Validate(f.Validate)
 		if f.Masked {
 			in = in.EchoMode(huh.EchoModePassword)
 		}

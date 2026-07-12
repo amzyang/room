@@ -30,9 +30,26 @@ func TestBuildFormSpecCoversRegistry(t *testing.T) {
 		}
 	}
 	for _, it := range Registry {
-		if seen[it.EnvKey] != 1 {
-			t.Errorf("%s 在表单中出现 %d 次, want 1", it.EnvKey, seen[it.EnvKey])
+		want := 1
+		if it.EnvKey == "SENTRY_DSN" {
+			want = 0 // sentry.dsn 不进 TUI,用 room config set 管理
 		}
+		if seen[it.EnvKey] != want {
+			t.Errorf("%s 在表单中出现 %d 次, want %d", it.EnvKey, seen[it.EnvKey], want)
+		}
+	}
+}
+
+// 字段单行展示:「文案[（必填）]  键名」,不再有第二行描述。
+func TestBuildFormSpecFieldTitles(t *testing.T) {
+	groups := BuildFormSpec(map[string]string{}, nil)
+	appID := findField(t, groups, "FEISHU_APP_ID")
+	if appID.Title != appID.Item.Desc+"（必填）  feishu.app_id" {
+		t.Errorf("必填项 Title 应为「文案（必填）  键名」: %q", appID.Title)
+	}
+	size := findField(t, groups, "ROOM_SIZE")
+	if size.Title != size.Item.Desc+"  booking.room_size" {
+		t.Errorf("选填项 Title 应为「文案  键名」: %q", size.Title)
 	}
 }
 

@@ -58,5 +58,10 @@ func New(debug bool, loc *time.Location) *slog.Logger {
 	if debug {
 		level = slog.LevelDebug
 	}
+	return NewAt(level, loc)
+}
+
+// NewAt 构建写入 stderr 的指定级别 logger（--json 模式提级到 Warn 用）。
+func NewAt(level slog.Level, loc *time.Location) *slog.Logger {
 	return slog.New(&textHandler{mu: &sync.Mutex{}, w: os.Stderr, level: level, loc: loc})
 }

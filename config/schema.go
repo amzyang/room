@@ -15,10 +15,7 @@ import (
 )
 
 // 与 main 包共用的默认值,单一事实来源。
-const (
-	DefaultUserTokenPath = ".cache/feishu-user-token.json"
-	DefaultUserAuthScope = "calendar:calendar calendar:calendar:readonly calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:delete calendar:calendar.free_busy:read vc:room:readonly vc:reserve:readonly contact:user.base:readonly contact:user.employee_id:readonly contact:contact.base:readonly"
-)
+const DefaultUserTokenPath = ".cache/feishu-user-token.json"
 
 // Type 配置项的值类型,决定校验规则与 TOML 表示。
 type Type int
@@ -57,8 +54,6 @@ var Registry = []Item{
 		Desc: "鉴权模式:auto(用户优先、应用兜底)/ user / tenant"},
 	{EnvKey: "FEISHU_USER_TOKEN_PATH", Section: "feishu", Key: "user_token_path", Type: TypeString, Default: DefaultUserTokenPath,
 		Desc: "用户凭证存储路径(相对路径基于运行时所在目录)"},
-	{EnvKey: "FEISHU_USER_AUTH_SCOPE", Section: "feishu", Key: "user_auth_scope", Type: TypeString, Default: DefaultUserAuthScope, Multiline: true,
-		Desc: "用户授权 scope(空格分隔)"},
 	{EnvKey: "TASK_OWNER", Section: "booking", Key: "task_owner", Type: TypeString, Required: true,
 		Desc: "任务负责人邮箱前缀(自动加入所有会议参与者)"},
 	{EnvKey: "ROOM_LIST", Section: "booking", Key: "room_list", Type: TypeList, Required: true,

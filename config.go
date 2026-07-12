@@ -17,10 +17,13 @@ const (
 	defaultCancelDays    = 31
 	defaultMeetingTitle  = "meeting"
 	defaultUserTokenPath = config.DefaultUserTokenPath
-	defaultUserAuthScope = config.DefaultUserAuthScope
 	holidayCacheDir      = ".cache/holidays"
 	userIDCachePath      = ".cache/user_ids_lark.json"
 	autoBookingCachePath = ".cache/auto-booking-cache.json"
+
+	// userAuthScope login 固定申请的用户授权 scope,按本工具实际调用的 API 划定
+	// (offline_access 由 tokenclient 自动补)。
+	userAuthScope = "calendar:calendar calendar:calendar:readonly calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:delete calendar:calendar.free_busy:read vc:room:readonly vc:reserve:readonly contact:user.base:readonly contact:user.employee_id:readonly contact:contact.base:readonly"
 )
 
 func env(key string) string {

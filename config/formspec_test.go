@@ -43,7 +43,6 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 	}{
 		{"FEISHU_AUTH_MODE", FieldSelect},
 		{"TASK_FORMAT", FieldText},
-		{"FEISHU_USER_AUTH_SCOPE", FieldText},
 		{"FEISHU_APP_ID", FieldInput},
 		{"FEISHU_APP_SECRET", FieldInput},
 	}

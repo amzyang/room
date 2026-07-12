@@ -571,10 +571,6 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
 	}
 
-	scope := env("FEISHU_USER_AUTH_SCOPE")
-	if scope == "" {
-		scope = defaultUserAuthScope
-	}
 	userTokenPath := env("FEISHU_USER_TOKEN_PATH")
 	if userTokenPath == "" {
 		userTokenPath = defaultUserTokenPath
@@ -601,7 +597,7 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 		return emitLoginOK(a.streams.Out, token, opts.jsonOut)
 	}
 
-	device, err := auth.TokenClient.RequestDeviceAuthorization(ctx, scope)
+	device, err := auth.TokenClient.RequestDeviceAuthorization(ctx, userAuthScope)
 	if err != nil {
 		return output.Wrap(output.TypeAPI, "检查应用凭证是否有效后重试",
 			fmt.Errorf("发起设备码授权失败: %w", err))

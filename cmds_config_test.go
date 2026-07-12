@@ -120,11 +120,12 @@ func TestConfigGet(t *testing.T) {
 }
 
 func TestConfigList(t *testing.T) {
-	longScope := strings.Repeat("scope:x ", 20)
+	longFormat := strings.Repeat("fri,11:00:00-12:00:00,weekly,alice,周会|", 5)
 	a := newConfigTestApp(filepath.Join(t.TempDir(), "config.toml"), map[string]config.Entry{
-		"FEISHU_APP_ID":          {Value: "cli_x", Source: config.SourceShellEnv},
-		"FEISHU_APP_SECRET":      {Value: "supersecret123", Source: config.SourceTOML},
-		"FEISHU_USER_AUTH_SCOPE": {Value: longScope, Source: config.SourceDefault},
+		"FEISHU_APP_ID":     {Value: "cli_x", Source: config.SourceShellEnv},
+		"FEISHU_APP_SECRET": {Value: "supersecret123", Source: config.SourceTOML},
+		"TASK_FORMAT":       {Value: longFormat, Source: config.SourceTOML},
+		"FEISHU_AUTH_MODE":  {Value: "auto", Source: config.SourceDefault},
 	})
 
 	out, _, err := execConfigCmd(t, a, "list")
@@ -139,7 +140,7 @@ func TestConfigList(t *testing.T) {
 	if strings.Contains(out, "supersecret123") {
 		t.Errorf("list 不应输出 secret 明文:\n%s", out)
 	}
-	if strings.Contains(out, longScope) {
+	if strings.Contains(out, longFormat) {
 		t.Errorf("超长值应截断显示:\n%s", out)
 	}
 	if !strings.Contains(out, "…") {

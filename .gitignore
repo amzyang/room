@@ -1,8 +1,10 @@
 .env
 .env.bak
 .cache/
-room
+/room
 dist/
 *.log
 plans/
 .DS_Store
+# 覆盖全局 gitignore 的 output 规则：output/ 是 Go 源码包
+!output/

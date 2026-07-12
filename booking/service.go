@@ -186,33 +186,35 @@ func (s *Service) ListMyEvents(ctx context.Context, days int, organizedByMeOnly 
 	return formatted, nil
 }
 
-// CancelEvent 取消日历事件；事件已被取消/删除（code 193003）视为成功。
-func (s *Service) CancelEvent(ctx context.Context, eventID string) (string, error) {
+// CancelEvent 取消日历事件；事件已被取消/删除（code 193003）视为幂等成功。
+func (s *Service) CancelEvent(ctx context.Context, eventID string) (*CancelOutcome, error) {
 	if err := s.API.DeleteCalendarEvent(ctx, eventID); err != nil {
 		if feishu.IsEventDeleted(err) {
 			s.Log.Info(fmt.Sprintf("事件 %s 已被取消或删除", eventID))
-			return "该事件已被取消", nil
+			return &CancelOutcome{AlreadyCancelled: true}, nil
 		}
-		return "", err
+		return nil, err
 	}
 	s.Log.Info(fmt.Sprintf("成功取消日历事件: %s", eventID))
-	return "事件已成功取消", nil
+	return &CancelOutcome{}, nil
 }
 
-// AutoBook 按 TASK_FORMAT 在最大可预订天数窗口内批量预订。
-func (s *Service) AutoBook(ctx context.Context, dryRun bool) error {
+// AutoBook 按 TASK_FORMAT 在最大可预订天数窗口内批量预订，返回逐条结果。
+// 批量语义：单条未订到/失败不是整体错误，靠结果的 Status 区分。
+func (s *Service) AutoBook(ctx context.Context, dryRun bool) ([]BookResult, error) {
 	tasks := ParseTaskFormat(s.Cfg.TaskFormat, s.Cfg.TaskOwner)
 	maxDays := s.getMaxBookingDays(ctx)
 	now := s.Clock().In(s.Loc)
 	deadline := endOfDay(now.AddDate(0, 0, maxDays))
 
+	var results []BookResult
 	for _, task := range tasks {
-		s.processTask(ctx, task, dryRun, now, deadline, maxDays)
+		results = append(results, s.processTask(ctx, task, dryRun, now, deadline, maxDays)...)
 	}
-	return nil
+	return results, nil
 }
 
-func (s *Service) processTask(ctx context.Context, task Task, dryRun bool, now, deadline time.Time, maxDays int) {
+func (s *Service) processTask(ctx context.Context, task Task, dryRun bool, now, deadline time.Time, maxDays int) []BookResult {
 	var targetDates []time.Time
 	for date := now; !dateAfter(date, deadline); date = date.AddDate(0, 0, 1) {
 		if IsDayOfWeekMatch(date, task.DayOfWeek) && IsInCycle(date, task, s.Loc) {
@@ -222,9 +224,10 @@ func (s *Service) processTask(ctx context.Context, task Task, dryRun bool, now, 
 
 	if len(targetDates) == 0 {
 		s.Log.Warn(fmt.Sprintf("在%d天内未找到符合条件的预订日期: %s", maxDays, task.DayOfWeek))
-		return
+		return nil
 	}
 
+	var results []BookResult
 	for _, targetDate := range targetDates {
 		dateStr := targetDate.Format("2006-01-02")
 		logPrefix := ""
@@ -233,48 +236,61 @@ func (s *Service) processTask(ctx context.Context, task Task, dryRun bool, now, 
 		}
 		s.Log.Info(fmt.Sprintf("%s 计划预订: %s %s-%s %s", logPrefix, dateStr, task.StartTime, task.EndTime, task.Title))
 
-		if !dryRun {
-			if _, err := s.BookRoom(ctx, dateStr, task.StartTime, task.EndTime, task.Title, task.Participants); err != nil {
-				s.Log.Error(fmt.Sprintf("预订失败: %s %s", dateStr, task.Title))
-			}
+		planned := BookResult{Status: StatusPlanned, Date: dateStr, StartTime: task.StartTime, EndTime: task.EndTime, Title: task.Title}
+		if dryRun {
+			results = append(results, planned)
+			continue
 		}
+		result, err := s.BookRoom(ctx, dateStr, task.StartTime, task.EndTime, task.Title, task.Participants)
+		if err != nil {
+			s.Log.Error(fmt.Sprintf("预订失败: %s %s: %v", dateStr, task.Title, err))
+			planned.Status = StatusFailed
+			results = append(results, planned)
+			continue
+		}
+		results = append(results, *result)
 	}
+	return results
 }
 
 // BookRoom 预订单个时间段：节假日/重叠检查 → 找可用会议室 → 建日程并确认。
-// 未预订（节假日、重叠、无可用会议室）时返回空 eventID 且无错误。
-func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string) (string, error) {
+// 未预订（节假日、重叠、无可用会议室）通过 BookResult.Status 区分，不视为 error。
+func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string) (*BookResult, error) {
 	dateStr := date
+	result := &BookResult{Date: dateStr, StartTime: startTime, EndTime: endTime, Title: title}
 
 	if s.holidays[dateStr] {
 		s.Log.Warn(fmt.Sprintf("跳过节假日: %s", dateStr))
-		return "", nil
+		result.Status = StatusHolidaySkipped
+		return result, nil
 	}
 
 	startDateTime, err := time.ParseInLocation("2006-01-02 15:04:05", dateStr+" "+startTime, s.Loc)
 	if err != nil {
-		return "", fmt.Errorf("无效的开始时间: %w", err)
+		return nil, fmt.Errorf("无效的开始时间: %w", err)
 	}
 	endDateTime, err := time.ParseInLocation("2006-01-02 15:04:05", dateStr+" "+endTime, s.Loc)
 	if err != nil {
-		return "", fmt.Errorf("无效的结束时间: %w", err)
+		return nil, fmt.Errorf("无效的结束时间: %w", err)
 	}
 
 	dayStart := startOfDay(startDateTime)
 	existingEvents, err := s.API.GetCalendarEvents(ctx, dayStart, endOfDay(startDateTime))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if s.hasOverlapEvent(existingEvents, startDateTime, endDateTime, dateStr, startTime, endTime) {
 		s.Log.Warn(fmt.Sprintf("跳过已有日历事件的时间段: %s %s-%s", dateStr, startTime, endTime))
-		return "", nil
+		result.Status = StatusConflict
+		return result, nil
 	}
 
 	room := s.findAvailableRoom(ctx, s.Cfg.RoomList, dateStr, startTime, endTime)
 	if room == nil {
 		s.Log.Warn(fmt.Sprintf("未找到可用会议室: %s", strings.Join(s.Cfg.RoomList, ", ")))
-		return "", nil
+		result.Status = StatusNoRoom
+		return result, nil
 	}
 
 	event := feishu.Event{
@@ -296,7 +312,7 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 
 	eventID, err := s.API.BookRoomWithEvent(ctx, event, room.ID, participantIDs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	s.Log.Info(fmt.Sprintf("成功预订会议室: %s, 日程ID: %s", room.Name, eventID))
@@ -304,7 +320,11 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 	if err := s.AutoCache.Save(); err != nil {
 		s.Log.Error(fmt.Sprintf("保存自动预订缓存失败: %v", err))
 	}
-	return eventID, nil
+	result.Status = StatusBooked
+	result.EventID = eventID
+	result.Room = &BookedRoom{ID: room.ID, Name: room.Name}
+	result.ParticipantsResolved = len(participantIDs)
+	return result, nil
 }
 
 func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, start, end time.Time, dateStr, startTime, endTime string) bool {

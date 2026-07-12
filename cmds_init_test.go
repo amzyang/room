@@ -12,14 +12,14 @@ import (
 	"github.com/amzyang/room/feishu"
 )
 
-func TestValidateInitOptions(t *testing.T) {
-	if err := validateInitOptions(initOptions{noWait: true, deviceCode: "dc"}); err == nil {
+func TestValidateResumeFlags(t *testing.T) {
+	if err := validateResumeFlags(true, "dc"); err == nil {
 		t.Error("--no-wait 与 --device-code 互斥应报错")
 	}
-	if err := validateInitOptions(initOptions{noWait: true}); err != nil {
+	if err := validateResumeFlags(true, ""); err != nil {
 		t.Errorf("仅 --no-wait 应放行: %v", err)
 	}
-	if err := validateInitOptions(initOptions{deviceCode: "dc"}); err != nil {
+	if err := validateResumeFlags(false, "dc"); err != nil {
 		t.Errorf("仅 --device-code 应放行: %v", err)
 	}
 }
@@ -74,6 +74,22 @@ func TestMaskSecret(t *testing.T) {
 	}
 }
 
+// unwrapData 解析成功信封并断言 ok:true，返回 data 对象。
+func unwrapData(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var env struct {
+		OK   bool           `json:"ok"`
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("非法 JSON: %v: %s", err, raw)
+	}
+	if !env.OK {
+		t.Fatalf("信封 ok 应为 true: %s", raw)
+	}
+	return env.Data
+}
+
 func testRegistrationCode() *feishu.AppRegistrationCode {
 	return &feishu.AppRegistrationCode{
 		DeviceCode:              "dc1",
@@ -89,10 +105,7 @@ func TestEmitAppRegistrationJSON(t *testing.T) {
 	var buf bytes.Buffer
 	emitAppRegistration(&buf, testRegistrationCode(), true, false, false)
 
-	var got map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("非法 JSON: %v: %s", err, buf.String())
-	}
+	got := unwrapData(t, buf.Bytes())
 	want := map[string]any{
 		"event":                     "app_registration",
 		"device_code":               "dc1",
@@ -116,10 +129,7 @@ func TestEmitAppRegistrationJSONResumeCommand(t *testing.T) {
 	var buf bytes.Buffer
 	emitAppRegistration(&buf, testRegistrationCode(), true, true, true)
 
-	var got map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("非法 JSON: %v: %s", err, buf.String())
-	}
+	got := unwrapData(t, buf.Bytes())
 	// --no-wait --force 的第二段是独立进程，JSON 消费者必须能从事件里拿到完整恢复命令（含 --force）
 	if want := "room init --device-code dc1 --force"; got["resume_command"] != want {
 		t.Errorf("resume_command = %v, want %q", got["resume_command"], want)
@@ -206,10 +216,7 @@ func TestSaveAppCredentials(t *testing.T) {
 		if err := saveAppCredentials(&buf, path, creds, true); err != nil {
 			t.Fatal(err)
 		}
-		var got map[string]any
-		if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-			t.Fatalf("非法 JSON: %v: %s", err, buf.String())
-		}
+		got := unwrapData(t, buf.Bytes())
 		want := map[string]any{
 			"event":        "app_registered",
 			"app_id":       "cli_new",

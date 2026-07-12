@@ -9,10 +9,10 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/feishu"
+	"github.com/amzyang/room/output"
 )
 
 // levelLister 层级选择器对飞书 API 的最小依赖。
@@ -122,10 +122,14 @@ func runConfigPickRoomLevel(cmd *cobra.Command, a *app) error {
 	appID := env("FEISHU_APP_ID")
 	appSecret := env("FEISHU_APP_SECRET")
 	if appID == "" || appSecret == "" {
-		return fmt.Errorf("飞书配置缺失，请先运行 room init 或 room config set 设置 FEISHU_APP_ID 与 FEISHU_APP_SECRET")
+		return output.Errf(output.TypeConfig,
+			"运行 room init，或 room config set feishu.app_id / feishu.app_secret 写入凭证",
+			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("交互选择需要在终端中运行（非终端环境请用 room config set booking.room_level_id VALUE）")
+	if !a.interactive() {
+		return output.Errf(output.TypeValidation,
+			"非交互环境请用 room config set booking.room_level_id VALUE 直接写入",
+			"交互选择需要在终端中运行")
 	}
 
 	userTokenPath := env("FEISHU_USER_TOKEN_PATH")

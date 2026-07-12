@@ -10,6 +10,7 @@ import (
 	"github.com/amzyang/room/envutil"
 	"github.com/amzyang/room/feishu"
 	"github.com/amzyang/room/nlp"
+	"github.com/amzyang/room/output"
 )
 
 const (
@@ -26,6 +27,14 @@ func env(key string) string {
 	return envutil.CleanEnvValue(os.Getenv(key))
 }
 
+// bookingService auto/book/list/cancel 命令依赖的服务能力（测试注入 fake）。
+type bookingService interface {
+	ListMyEvents(ctx context.Context, days int, organizedByMeOnly bool) ([]booking.EventSummary, error)
+	CancelEvent(ctx context.Context, eventID string) (*booking.CancelOutcome, error)
+	BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string) (*booking.BookResult, error)
+	AutoBook(ctx context.Context, dryRun bool) ([]booking.BookResult, error)
+}
+
 // tlsInsecure ROOM_TLS_INSECURE 默认开启（对齐原 Node 版全局关闭 TLS 校验），设 0 关闭。
 func tlsInsecure() bool {
 	return env("ROOM_TLS_INSECURE") != "0"
@@ -36,15 +45,19 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 	appID := env("FEISHU_APP_ID")
 	appSecret := env("FEISHU_APP_SECRET")
 	if appID == "" || appSecret == "" {
-		return nil, fmt.Errorf("飞书配置缺失，请检查 FEISHU_APP_ID 和 FEISHU_APP_SECRET 环境变量")
+		return nil, output.Errf(output.TypeConfig,
+			"运行 room init 自动创建应用，或 room config set feishu.app_id / feishu.app_secret 手动写入",
+			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
 	}
 	taskOwner := env("TASK_OWNER")
 	if taskOwner == "" {
-		return nil, fmt.Errorf("缺失 TASK_OWNER 配置，请用 room config set booking.task_owner 设置")
+		return nil, output.Errf(output.TypeConfig,
+			"运行 room config set booking.task_owner <邮箱前缀> 设置", "缺失 TASK_OWNER 配置")
 	}
 	roomList := envutil.ParseEnvList(os.Getenv("ROOM_LIST"))
 	if len(roomList) == 0 {
-		return nil, fmt.Errorf("缺失 ROOM_LIST 配置，请用 room config set booking.room_list 设置")
+		return nil, output.Errf(output.TypeConfig,
+			"运行 room config set booking.room_list <逗号分隔的会议室名> 设置", "缺失 ROOM_LIST 配置")
 	}
 
 	userTokenPath := env("FEISHU_USER_TOKEN_PATH")
@@ -90,7 +103,7 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 	a.log.Info(fmt.Sprintf("启动飞书预订服务: %s", mode))
 
 	if err := service.Initialize(ctx); err != nil {
-		return nil, err
+		return nil, output.Wrap(output.TypeAuth, "检查凭证是否有效，必要时重新运行 room init 与 room login", err)
 	}
 	return service, nil
 }

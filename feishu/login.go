@@ -2,11 +2,14 @@ package feishu
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os/exec"
 	"runtime"
 	"time"
 )
+
+// ErrLoginExpired 设备码过期或用户未在有效期内完成授权。
+var ErrLoginExpired = errors.New("设备码已过期，用户未在有效期内完成授权，请重新运行 login")
 
 // OpenBrowser 尽力用系统默认浏览器打开 url；失败时仅依赖终端打印的链接，忽略错误。
 func OpenBrowser(url string) {
@@ -22,32 +25,23 @@ func OpenBrowser(url string) {
 	_ = exec.Command(opener, url).Start()
 }
 
-// RunDeviceLogin OAuth 2.0 设备码流程登录：展示授权链接（并尝试打开浏览器），
-// 轮询直到用户在飞书点「同意」。成功后把用户凭证写入本地存储并返回。
-func RunDeviceLogin(ctx context.Context, auth *Auth, scope string) (*StoredUserToken, error) {
-	device, err := auth.TokenClient.RequestDeviceAuthorization(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	verifyURL := device.VerificationURIComplete
-	if verifyURL == "" {
-		verifyURL = device.VerificationURI
-	}
+// PollDeviceLogin 轮询设备码授权结果直到用户点「同意」，成功后把用户凭证写入
+// 本地存储并返回。发起授权（RequestDeviceAuthorization）由调用方负责，
+// 以支持 --no-wait / --device-code 两段式。
+func PollDeviceLogin(ctx context.Context, auth *Auth, deviceCode string, intervalSec, expiresInSec int) (*StoredUserToken, error) {
+	return pollDeviceLogin(ctx, auth, deviceCode, intervalSec, expiresInSec, nil)
+}
 
-	auth.Log.Info("请在【已登录飞书的浏览器 / 飞书客户端】中打开以下链接并点击「同意」授权:")
-	auth.Log.Info("  " + verifyURL)
-	if device.VerificationURIComplete == "" && device.UserCode != "" {
-		auth.Log.Info("  用户码 user_code: " + device.UserCode)
-	}
-	auth.Log.Info("（正在尝试自动打开浏览器；若未打开请手动复制上面的链接）")
-	OpenBrowser(verifyURL)
-
-	deadline := auth.Clock().Add(time.Duration(device.ExpiresInSec) * time.Second)
-	interval := time.Duration(device.IntervalSec) * time.Second
+func pollDeviceLogin(ctx context.Context, auth *Auth, deviceCode string, intervalSec, expiresInSec int,
+	sleep func(context.Context, time.Duration) error) (*StoredUserToken, error) {
+	deadline := auth.Clock().Add(time.Duration(expiresInSec) * time.Second)
+	interval := time.Duration(intervalSec) * time.Second
 
 	for auth.Clock().Before(deadline) {
-		time.Sleep(interval)
-		result, err := auth.TokenClient.PollDeviceToken(ctx, device.DeviceCode)
+		if err := waitFor(ctx, sleep, interval); err != nil {
+			return nil, err
+		}
+		result, err := auth.TokenClient.PollDeviceToken(ctx, deviceCode)
 		if err != nil {
 			return nil, err
 		}
@@ -60,5 +54,5 @@ func RunDeviceLogin(ctx context.Context, auth *Auth, scope string) (*StoredUserT
 		auth.Log.Debug("等待用户授权中...")
 	}
 
-	return nil, fmt.Errorf("设备码已过期，用户未在有效期内完成授权，请重新运行 login")
+	return nil, ErrLoginExpired
 }

@@ -7,9 +7,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/amzyang/room/config"
+	"github.com/amzyang/room/output"
 )
 
 // newConfigCmd config 命令族：查看与修改全局配置文件（默认 ~/.config/room/config.toml）。
@@ -19,9 +19,20 @@ func newConfigCmd(a *app) *cobra.Command {
 		Short: "查看与修改配置（全局 config.toml）",
 		Long: "管理全局配置文件。KEY 接受 TOML 键（feishu.app_id）或环境变量名（FEISHU_APP_ID）。\n" +
 			"优先级：shell 环境变量 > config.toml > 内置默认。\n" +
-			"不带子命令且在终端中运行时，进入交互式表单编辑全部配置。",
+			"不带子命令且在终端中运行时，进入交互式表单编辑全部配置。\n" +
+			"get/set/list/unset/path 均支持 --json 输出信封（secret 值在 set/list 中掩码）。",
+		Example: `  room config list --json
+  room config get feishu.app_id --json
+  room config set booking.task_owner alice
+  room config set booking.room_level_id        # 终端下交互式层级选择`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !term.IsTerminal(int(os.Stdin.Fd())) {
+			// --json 下人类帮助文本会污染机读 stdout，fail-fast 指引子命令
+			if a.jsonOut {
+				return output.Errf(output.TypeValidation,
+					"使用子命令：room config list/get/set/unset/path（均支持 --json）",
+					"config 需要子命令")
+			}
+			if !a.interactive() {
 				return cmd.Help()
 			}
 			return runConfigTUI(cmd, a)
@@ -37,19 +48,43 @@ func newConfigCmd(a *app) *cobra.Command {
 	return cmd
 }
 
+// sourceSlug JSON 输出用的稳定来源标识（人类表格用 Source.String()）。
+func sourceSlug(s config.Source) string {
+	switch s {
+	case config.SourceShellEnv:
+		return "shell_env"
+	case config.SourceTOML:
+		return "config.toml"
+	case config.SourceDefault:
+		return "default"
+	}
+	return "unset"
+}
+
+// lookupItem 把未知 KEY 归入 validation（exit 2）。
+func lookupItem(key string) (config.Item, error) {
+	it, err := config.Lookup(key)
+	if err != nil {
+		return it, output.Wrap(output.TypeValidation, "运行 room config list 查看全部可用 KEY", err)
+	}
+	return it, nil
+}
+
 func newConfigSetCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set KEY [VALUE]",
 		Short: "写入一项配置到 config.toml（booking.room_level_id 省略 VALUE 时交互选择）",
-		Args:  cobra.RangeArgs(1, 2),
+		Args:  validationArgs(cobra.RangeArgs(1, 2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			it, err := config.Lookup(args[0])
+			it, err := lookupItem(args[0])
 			if err != nil {
 				return err
 			}
 			if len(args) == 1 {
 				if it.EnvKey != "ROOM_LEVEL_ID" {
-					return fmt.Errorf("set %s 缺少 VALUE（仅 booking.room_level_id 支持省略 VALUE 交互选择）", it.TOMLKey())
+					return output.Errf(output.TypeValidation,
+						"补充 VALUE 参数（仅 booking.room_level_id 支持省略 VALUE 交互选择）",
+						"set %s 缺少 VALUE", it.TOMLKey())
 				}
 				return runConfigPickRoomLevel(cmd, a)
 			}
@@ -61,11 +96,27 @@ func newConfigSetCmd(a *app) *cobra.Command {
 			if it.Secret {
 				display = maskSecret(val)
 			}
+			if a.jsonOut {
+				data := configSetData{Key: it.TOMLKey(), Env: it.EnvKey, Value: display, Path: a.cfg.Path}
+				if src := a.cfg.OverrideOf(it.EnvKey); src != config.SourceUnset {
+					data.OverriddenBy = sourceSlug(src)
+				}
+				return output.WriteSuccess(cmd.OutOrStdout(), data, nil)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "已写入 %s: %s = %s\n", a.cfg.Path, it.TOMLKey(), display)
 			warnOverride(cmd, a, it)
 			return nil
 		},
 	}
+}
+
+// configSetData config set --json 的 data 载荷（secret 值已掩码）。
+type configSetData struct {
+	Key          string `json:"key"`
+	Env          string `json:"env"`
+	Value        string `json:"value"`
+	Path         string `json:"path"`
+	OverriddenBy string `json:"overridden_by,omitempty"` // 非空表示写入被更高层配置压住，当前不生效
 }
 
 // setConfigValue 规范化 raw 并写入 config.toml，返回写入的规范值。
@@ -99,13 +150,21 @@ func newConfigGetCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get KEY",
 		Short: "打印一项配置的生效值（不掩码，供脚本消费）",
-		Args:  cobra.ExactArgs(1),
+		Args:  validationArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			it, err := config.Lookup(args[0])
+			it, err := lookupItem(args[0])
 			if err != nil {
 				return err
 			}
 			e := a.cfg.Entries[it.EnvKey]
+			if a.jsonOut {
+				return output.WriteSuccess(cmd.OutOrStdout(), struct {
+					Key    string `json:"key"`
+					Env    string `json:"env"`
+					Value  string `json:"value"`
+					Source string `json:"source"`
+				}{it.TOMLKey(), it.EnvKey, e.Value, sourceSlug(e.Source)}, nil)
+			}
 			if showSource {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.Value, e.Source)
 				return nil
@@ -122,13 +181,45 @@ func newConfigListCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "列出全部配置项的生效值与来源（secret 掩码）",
-		Args:  cobra.NoArgs,
+		Args:  validationArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, statErr := os.Stat(a.cfg.Path)
+			if a.jsonOut {
+				data := configListData(a.cfg, statErr == nil)
+				return output.WriteSuccess(cmd.OutOrStdout(), data, &output.Meta{Count: len(data.Items)})
+			}
 			fmt.Fprint(cmd.OutOrStdout(), formatConfigList(a.cfg, statErr == nil))
 			return nil
 		},
 	}
+}
+
+type configListItem struct {
+	Key    string `json:"key"`
+	Env    string `json:"env"`
+	Value  string `json:"value"` // secret 项已掩码，完整值用 room config get
+	Secret bool   `json:"secret"`
+	Source string `json:"source"`
+}
+
+type configList struct {
+	Path       string           `json:"path"`
+	FileExists bool             `json:"file_exists"`
+	Items      []configListItem `json:"items"`
+}
+
+// configListData 纯函数：生效配置 → JSON data 载荷。
+func configListData(r *config.Resolved, fileExists bool) configList {
+	items := make([]configListItem, 0, len(config.Registry))
+	for _, it := range config.Registry {
+		e := r.Entries[it.EnvKey]
+		v := e.Value
+		if it.Secret {
+			v = maskSecret(v)
+		}
+		items = append(items, configListItem{Key: it.TOMLKey(), Env: it.EnvKey, Value: v, Secret: it.Secret, Source: sourceSlug(e.Source)})
+	}
+	return configList{Path: r.Path, FileExists: fileExists, Items: items}
 }
 
 // formatConfigList 纯函数：生效配置 → 表格文本。
@@ -167,9 +258,9 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "unset KEY",
 		Short: "从 config.toml 删除一项配置",
-		Args:  cobra.ExactArgs(1),
+		Args:  validationArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			it, err := config.Lookup(args[0])
+			it, err := lookupItem(args[0])
 			if err != nil {
 				return err
 			}
@@ -177,13 +268,24 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("读取 %s 失败: %w", a.cfg.Path, err)
 			}
-			if _, ok := doc.Values[it.EnvKey]; !ok {
+			_, existed := doc.Values[it.EnvKey]
+			if existed {
+				delete(doc.Values, it.EnvKey)
+				if err := config.WriteFile(a.cfg.Path, doc); err != nil {
+					return err
+				}
+			}
+			if a.jsonOut {
+				return output.WriteSuccess(cmd.OutOrStdout(), struct {
+					Key     string `json:"key"`
+					Env     string `json:"env"`
+					Path    string `json:"path"`
+					Removed bool   `json:"removed"` // false 表示本来就未设置（幂等成功）
+				}{it.TOMLKey(), it.EnvKey, a.cfg.Path, existed}, nil)
+			}
+			if !existed {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s 未在 %s 中设置，无需删除\n", it.TOMLKey(), a.cfg.Path)
 				return nil
-			}
-			delete(doc.Values, it.EnvKey)
-			if err := config.WriteFile(a.cfg.Path, doc); err != nil {
-				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "已从 %s 删除 %s\n", a.cfg.Path, it.TOMLKey())
 			return nil
@@ -195,8 +297,13 @@ func newConfigPathCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "打印全局配置文件路径",
-		Args:  cobra.NoArgs,
+		Args:  validationArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if a.jsonOut {
+				return output.WriteSuccess(cmd.OutOrStdout(), struct {
+					Path string `json:"path"`
+				}{a.cfg.Path}, nil)
+			}
 			fmt.Fprintln(cmd.OutOrStdout(), a.cfg.Path)
 			return nil
 		},

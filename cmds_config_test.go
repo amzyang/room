@@ -2,19 +2,25 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/amzyang/room/config"
+	"github.com/amzyang/room/output"
 )
 
 func newConfigTestApp(path string, entries map[string]config.Entry) *app {
 	if entries == nil {
 		entries = map[string]config.Entry{}
 	}
-	return &app{cfg: &config.Resolved{Path: path, Entries: entries}}
+	return &app{
+		cfg:     &config.Resolved{Path: path, Entries: entries},
+		streams: &output.Streams{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard},
+	}
 }
 
 func execConfigCmd(t *testing.T, a *app, args ...string) (string, string, error) {
@@ -180,6 +186,130 @@ func TestConfigPath(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "/some/path/config.toml" {
 		t.Errorf("path 输出不符: %q", out)
+	}
+}
+
+func TestConfigGetJSON(t *testing.T) {
+	a := newConfigTestApp("unused.toml", map[string]config.Entry{
+		"OPENAI_API_KEY": {Value: "sk-secret-value", Source: config.SourceTOML},
+	})
+	a.jsonOut = true
+
+	out, _, err := execConfigCmd(t, a, "get", "nlp.api_key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := unwrapData(t, []byte(out))
+	want := map[string]any{
+		"key": "nlp.api_key", "env": "OPENAI_API_KEY",
+		"value": "sk-secret-value", "source": "config.toml",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("data[%s] = %v, want %v", k, got[k], v)
+		}
+	}
+}
+
+func TestConfigListJSON(t *testing.T) {
+	a := newConfigTestApp(filepath.Join(t.TempDir(), "config.toml"), map[string]config.Entry{
+		"FEISHU_APP_ID":     {Value: "cli_x", Source: config.SourceShellEnv},
+		"FEISHU_APP_SECRET": {Value: "supersecret123", Source: config.SourceTOML},
+	})
+	a.jsonOut = true
+
+	out, _, err := execConfigCmd(t, a, "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "supersecret123") {
+		t.Errorf("list JSON 不应输出 secret 明文:\n%s", out)
+	}
+	var env struct {
+		OK   bool       `json:"ok"`
+		Data configList `json:"data"`
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("非法 JSON: %v: %s", err, out)
+	}
+	if !env.OK || env.Meta.Count != len(config.Registry) || len(env.Data.Items) != env.Meta.Count {
+		t.Errorf("信封结构不符: ok=%v count=%d items=%d", env.OK, env.Meta.Count, len(env.Data.Items))
+	}
+	byEnv := map[string]configListItem{}
+	for _, it := range env.Data.Items {
+		byEnv[it.Env] = it
+	}
+	if it := byEnv["FEISHU_APP_ID"]; it.Source != "shell_env" || it.Value != "cli_x" {
+		t.Errorf("app_id 项不符: %+v", it)
+	}
+	if it := byEnv["FEISHU_APP_SECRET"]; !it.Secret || it.Value == "supersecret123" {
+		t.Errorf("secret 项应掩码: %+v", it)
+	}
+}
+
+func TestConfigSetUnsetPathJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	a := newConfigTestApp(path, nil)
+	a.jsonOut = true
+
+	out, _, err := execConfigCmd(t, a, "set", "booking.task_owner", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := unwrapData(t, []byte(out))
+	if got["key"] != "booking.task_owner" || got["value"] != "alice" || got["path"] != path {
+		t.Errorf("set data 不符: %v", got)
+	}
+
+	out, _, err = execConfigCmd(t, a, "unset", "booking.task_owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unwrapData(t, []byte(out)); got["removed"] != true {
+		t.Errorf("unset 已存在项 removed 应为 true: %v", got)
+	}
+	out, _, err = execConfigCmd(t, a, "unset", "booking.task_owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unwrapData(t, []byte(out)); got["removed"] != false {
+		t.Errorf("重复 unset removed 应为 false（幂等）: %v", got)
+	}
+
+	out, _, err = execConfigCmd(t, a, "path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unwrapData(t, []byte(out)); got["path"] != path {
+		t.Errorf("path data 不符: %v", got)
+	}
+}
+
+func TestConfigUnknownKeyIsValidation(t *testing.T) {
+	a := newConfigTestApp("unused.toml", nil)
+	_, _, err := execConfigCmd(t, a, "get", "unknown.key")
+	if err == nil {
+		t.Fatal("未知 KEY 应报错")
+	}
+	if got := output.ExitCode(err); got != output.ExitValidation {
+		t.Errorf("未知 KEY 退出码 = %d, want %d", got, output.ExitValidation)
+	}
+}
+
+// 裸 room config --json 不能把人类帮助文本混进机读 stdout，应报 validation。
+func TestConfigBareJSONIsValidation(t *testing.T) {
+	a := newConfigTestApp("x.toml", nil)
+	a.jsonOut = true
+	_, _, err := execConfigCmd(t, a)
+	if err == nil {
+		t.Fatal("--json 下裸 config 应报错")
+	}
+	e := output.Classify(err)
+	if e.Type != output.TypeValidation || !strings.Contains(e.Hint, "config list") {
+		t.Errorf("应归 validation 且 hint 指引子命令: type=%s hint=%q", e.Type, e.Hint)
 	}
 }
 

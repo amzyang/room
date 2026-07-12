@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/room/feishu"
+	"github.com/amzyang/room/output"
 )
 
 // fakeLevelLister 内存层级树，记录每次请求的 parentID。
@@ -153,8 +154,12 @@ func TestPickRoomLevelAPIError(t *testing.T) {
 func TestConfigSetSingleArgOnlyRoomLevel(t *testing.T) {
 	a := newConfigTestApp(t.TempDir()+"/config.toml", nil)
 	_, _, err := execConfigCmd(t, a, "set", "booking.task_owner")
-	if err == nil || !strings.Contains(err.Error(), "booking.room_level_id") {
-		t.Errorf("其他 key 省略 VALUE 应报错并提示仅 room_level_id 支持，实际: %v", err)
+	if err == nil {
+		t.Fatal("其他 key 省略 VALUE 应报错")
+	}
+	e := output.Classify(err)
+	if e.Type != output.TypeValidation || !strings.Contains(e.Hint, "booking.room_level_id") {
+		t.Errorf("应归 validation 且 hint 提示仅 room_level_id 支持，实际: type=%s hint=%q", e.Type, e.Hint)
 	}
 }
 

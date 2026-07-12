@@ -9,6 +9,7 @@ import (
 	sentry "github.com/getsentry/sentry-go"
 
 	"github.com/amzyang/room/config"
+	"github.com/amzyang/room/output"
 )
 
 func main() {
@@ -17,13 +18,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "警告: "+resolved.Warning)
 	}
 
-	err := newRootCmd(resolved).Execute()
+	root, a := newRootCmd(resolved)
+	err := root.Execute()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		sentry.CaptureException(err)
+		output.WriteError(os.Stderr, err, a.jsonOut)
+		if output.Reportable(err) {
+			sentry.CaptureException(err)
+		}
 	}
 	sentry.Flush(2 * time.Second)
-	if err != nil {
-		os.Exit(1)
-	}
+	os.Exit(output.ExitCode(err))
 }

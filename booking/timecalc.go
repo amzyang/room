@@ -24,16 +24,16 @@ func IsOrganizedBy(organizerCalendarID, myCalendarID string) bool {
 	return organizerCalendarID != "" && organizerCalendarID == myCalendarID
 }
 
-// EventSummary 事件列表项（list/cancel 命令展示用）。
+// EventSummary 事件列表项（list/cancel 命令展示与 --json 输出用）。
 type EventSummary struct {
-	EventID        string
-	Title          string
-	Description    string
-	StartTime      string
-	EndTime        string
-	Location       string
-	StartTimestamp int64
-	EndTimestamp   int64
+	EventID        string `json:"event_id"`
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	StartTime      string `json:"start_time"`
+	EndTime        string `json:"end_time"`
+	Location       string `json:"location,omitempty"`
+	StartTimestamp int64  `json:"start_timestamp"`
+	EndTimestamp   int64  `json:"end_timestamp"`
 }
 
 // FormatEventList list 命令输出（与 Node 版格式一致，不含行尾空格）。

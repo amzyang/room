@@ -23,13 +23,14 @@ type Option struct {
 
 // FieldSpec 一个表单字段的中间表示。
 type FieldSpec struct {
-	Item     Item
-	Kind     FieldKind
-	Title    string   // 单行「文案[（必填）]  键名」
-	Masked   bool     // secret 项掩码输入
-	Options  []Option // 仅 FieldSelect
-	Initial  string   // 生效值预填
-	Validate func(string) error
+	Item        Item
+	Kind        FieldKind
+	Title       string   // 单行「文案[（必填）]  键名」
+	Placeholder string   // 空值时的示例提示（Input/Text）
+	Masked      bool     // secret 项掩码输入
+	Options     []Option // 仅 FieldSelect
+	Initial     string   // 生效值预填
+	Validate    func(string) error
 }
 
 // GroupSpec 一组表单字段。
@@ -50,16 +51,21 @@ var formGroups = []struct {
 	{"通知", []string{"notify"}},
 }
 
+// taskFormatPlaceholder task_format 空值时展示的 DSL 示例。
+const taskFormatPlaceholder = "wed,10:00:00-11:30:00,weekly,alice:bob,周会|fri,14:00:00-15:00:00,weekly,,复盘"
+
 // BuildFormSpec 纯函数:schema + 生效值 + 会议室层级选项(可为 nil) → 表单中间表示。
 // levels 非空时 room_level_id 渲染为层级下拉,否则保持文本输入(凭证缺失/拉取失败的降级)。
-func BuildFormSpec(effective map[string]string, levels []Option) []GroupSpec {
+// taskFormatValidate 注入 task_format 的 DSL 校验(cmd 层传 booking.ValidateTaskFormat,
+// 避免 config → booking 反向依赖),nil 时不校验。
+func BuildFormSpec(effective map[string]string, levels []Option, taskFormatValidate func(string) error) []GroupSpec {
 	var out []GroupSpec
 	for _, g := range formGroups {
 		spec := GroupSpec{Title: g.title}
 		for _, section := range g.sections {
 			for _, it := range Registry {
 				if it.Section == section {
-					spec.Fields = append(spec.Fields, buildField(it, effective[it.EnvKey], levels))
+					spec.Fields = append(spec.Fields, buildField(it, effective[it.EnvKey], levels, taskFormatValidate))
 				}
 			}
 		}
@@ -68,7 +74,7 @@ func BuildFormSpec(effective map[string]string, levels []Option) []GroupSpec {
 	return out
 }
 
-func buildField(it Item, initial string, levels []Option) FieldSpec {
+func buildField(it Item, initial string, levels []Option, taskFormatValidate func(string) error) FieldSpec {
 	title := it.Desc
 	if it.Required {
 		title += "（必填）"
@@ -103,6 +109,18 @@ func buildField(it Item, initial string, levels []Option) FieldSpec {
 		}
 	case it.Multiline:
 		f.Kind = FieldText
+	}
+	if it.EnvKey == "TASK_FORMAT" {
+		f.Placeholder = taskFormatPlaceholder
+		if taskFormatValidate != nil {
+			base := f.Validate
+			f.Validate = func(s string) error {
+				if err := base(s); err != nil {
+					return err
+				}
+				return taskFormatValidate(s)
+			}
+		}
 	}
 	return f
 }

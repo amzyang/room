@@ -58,7 +58,7 @@ var Registry = []Item{
 	{EnvKey: "ROOM_SIZE", Section: "booking", Key: "room_size", Type: TypeInt, Default: "0",
 		Desc: "会议室最大容量限制(0 为不限制)"},
 	{EnvKey: "TASK_FORMAT", Section: "booking", Key: "task_format", Type: TypeString, Multiline: true,
-		Desc: "自动预订任务 DSL(多任务用 | 分隔,语法见 README)"},
+		Desc: "自动预订任务 DSL(room config tasks 引导编辑,语法见 README)"},
 	{EnvKey: "EMAIL_DOMAIN", Section: "booking", Key: "email_domain", Type: TypeString,
 		Desc: "邮箱域名(参与者邮箱前缀 → 完整邮箱)"},
 	{EnvKey: "TIANAPI_KEY", Section: "booking", Key: "tianapi_key", Type: TypeString, Secret: true,

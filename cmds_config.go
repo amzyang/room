@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/amzyang/room/booking"
 	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/output"
 )
@@ -24,7 +25,8 @@ func newConfigCmd(a *app) *cobra.Command {
 		Example: `  room config list --json
   room config get feishu.app_id --json
   room config set booking.email_domain example.com
-  room config set booking.room_level_id        # 终端下交互式层级选择`,
+  room config set booking.room_level_id        # 终端下交互式层级选择
+  room config tasks                            # 交互式管理自动预订任务`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// --json 下人类帮助文本会污染机读 stdout，fail-fast 指引子命令
 			if a.jsonOut {
@@ -44,8 +46,23 @@ func newConfigCmd(a *app) *cobra.Command {
 		newConfigListCmd(a),
 		newConfigUnsetCmd(a),
 		newConfigPathCmd(a),
+		newConfigTasksCmd(a),
 	)
 	return cmd
+}
+
+// newConfigTasksCmd booking.task_format 的可发现入口，与 set 省略 VALUE 进同一编辑器。
+func newConfigTasksCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tasks",
+		Short: "交互式管理自动预订任务（booking.task_format）",
+		Long: "任务列表菜单中新增/编辑/复制/删除自动预订任务，逐字段引导填写并在保存前\n" +
+			"预览生成的 DSL 与接下来的命中日期。改动在「保存并退出」后写入 config.toml。",
+		Args: validationArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runConfigTasksEditor(cmd, a)
+		},
+	}
 }
 
 // sourceSlug JSON 输出用的稳定来源标识（人类表格用 Source.String()）。
@@ -73,7 +90,7 @@ func lookupItem(key string) (config.Item, error) {
 func newConfigSetCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set KEY [VALUE]",
-		Short: "写入一项配置到 config.toml（booking.room_level_id 省略 VALUE 时交互选择）",
+		Short: "写入一项配置到 config.toml（room_level_id/task_format 省略 VALUE 时交互编辑）",
 		Args:  validationArgs(cobra.RangeArgs(1, 2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			it, err := lookupItem(args[0])
@@ -81,12 +98,16 @@ func newConfigSetCmd(a *app) *cobra.Command {
 				return err
 			}
 			if len(args) == 1 {
-				if it.EnvKey != "ROOM_LEVEL_ID" {
+				switch it.EnvKey {
+				case "ROOM_LEVEL_ID":
+					return runConfigPickRoomLevel(cmd, a)
+				case "TASK_FORMAT":
+					return runConfigTasksEditor(cmd, a)
+				default:
 					return output.Errf(output.TypeValidation,
-						"补充 VALUE 参数（仅 booking.room_level_id 支持省略 VALUE 交互选择）",
+						"补充 VALUE 参数（仅 booking.room_level_id / booking.task_format 支持省略 VALUE 交互编辑）",
 						"set %s 缺少 VALUE", it.TOMLKey())
 				}
-				return runConfigPickRoomLevel(cmd, a)
 			}
 			val, err := setConfigValue(a, it, args[1])
 			if err != nil {
@@ -120,10 +141,16 @@ type configSetData struct {
 }
 
 // setConfigValue 规范化 raw 并写入 config.toml，返回写入的规范值。
+// task_format 额外做 DSL 校验，否则写错的任务在 room auto 运行时静默不生效。
 func setConfigValue(a *app, it config.Item, raw string) (string, error) {
 	val, err := it.Normalize(raw)
 	if err != nil {
 		return "", err
+	}
+	if it.EnvKey == "TASK_FORMAT" {
+		if err := booking.ValidateTaskFormat(val); err != nil {
+			return "", err
+		}
 	}
 	doc, err := config.ReadFile(a.cfg.Path)
 	if err != nil {

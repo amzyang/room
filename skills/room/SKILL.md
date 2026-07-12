@@ -49,6 +49,7 @@ room 是基于飞书开放平台的会议室预订 CLI。本 skill 描述其机�
 room config list --json                        # 查看全部配置与来源（secret 掩码）
 room config get feishu.app_id --json           # 单项明文值（供脚本）
 room config set booking.email_domain corp.com --json
+room config set booking.task_format "<DSL>" --json # auto 任务，语法见 README；人类用户可用 room config tasks 交互编辑
 room list -d 7 --json                          # data.events[].event_id 供 cancel 用
 room book -d 07-15 -t 14:00-15:00 --title 周会 -p "alice bob" --json
 room cancel --event-id <event_id> --yes --json # 幂等：已删除也 exit 0

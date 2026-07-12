@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,7 @@ func findField(t *testing.T, groups []GroupSpec, envKey string) FieldSpec {
 }
 
 func TestBuildFormSpecCoversRegistry(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{}, nil)
+	groups := BuildFormSpec(map[string]string{}, nil, nil)
 	if len(groups) != 4 {
 		t.Fatalf("分组数 = %d, want 4", len(groups))
 	}
@@ -42,7 +43,7 @@ func TestBuildFormSpecCoversRegistry(t *testing.T) {
 
 // 字段单行展示:「文案[（必填）]  键名」,不再有第二行描述。
 func TestBuildFormSpecFieldTitles(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{}, nil)
+	groups := BuildFormSpec(map[string]string{}, nil, nil)
 	appID := findField(t, groups, "FEISHU_APP_ID")
 	if appID.Title != appID.Item.Desc+"（必填）  feishu.app_id" {
 		t.Errorf("必填项 Title 应为「文案（必填）  键名」: %q", appID.Title)
@@ -54,7 +55,7 @@ func TestBuildFormSpecFieldTitles(t *testing.T) {
 }
 
 func TestBuildFormSpecFieldKinds(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{}, nil)
+	groups := BuildFormSpec(map[string]string{}, nil, nil)
 	tests := []struct {
 		env  string
 		kind FieldKind
@@ -82,12 +83,12 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 
 // room_level_id:注入层级选项时为下拉(首项「不限」空值),未注入时保持文本输入。
 func TestBuildFormSpecLevelOptions(t *testing.T) {
-	if f := findField(t, BuildFormSpec(map[string]string{}, nil), "ROOM_LEVEL_ID"); f.Kind != FieldInput {
+	if f := findField(t, BuildFormSpec(map[string]string{}, nil, nil), "ROOM_LEVEL_ID"); f.Kind != FieldInput {
 		t.Errorf("无层级选项时应为文本输入, got %v", f.Kind)
 	}
 
 	levels := []Option{{Label: "集团", Value: "L1"}, {Label: "集团 / A座", Value: "L2"}}
-	f := findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "L2"}, levels), "ROOM_LEVEL_ID")
+	f := findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "L2"}, levels, nil), "ROOM_LEVEL_ID")
 	if f.Kind != FieldSelect {
 		t.Fatalf("注入层级后应为下拉, got %v", f.Kind)
 	}
@@ -100,7 +101,7 @@ func TestBuildFormSpecLevelOptions(t *testing.T) {
 
 	// 生效值不在树中(层级已删除):追加「(当前值)」项,否则 huh 会在用户直接
 	// 走过表单时把配置静默改成首个选项
-	f = findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "gone"}, levels), "ROOM_LEVEL_ID")
+	f = findField(t, BuildFormSpec(map[string]string{"ROOM_LEVEL_ID": "gone"}, levels, nil), "ROOM_LEVEL_ID")
 	last := f.Options[len(f.Options)-1]
 	if last.Value != "gone" || !strings.Contains(last.Label, "当前值") {
 		t.Errorf("陈旧生效值应以「当前值」项保留: %v", f.Options)
@@ -108,7 +109,7 @@ func TestBuildFormSpecLevelOptions(t *testing.T) {
 }
 
 func TestBuildFormSpecInitial(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{"FEISHU_APP_ID": "cli_x"}, nil)
+	groups := BuildFormSpec(map[string]string{"FEISHU_APP_ID": "cli_x"}, nil, nil)
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Initial != "cli_x" {
 		t.Errorf("app_id Initial = %q", f.Initial)
 	}
@@ -119,7 +120,7 @@ func TestBuildFormSpecInitial(t *testing.T) {
 }
 
 func TestBuildFormSpecValidate(t *testing.T) {
-	groups := BuildFormSpec(map[string]string{}, nil)
+	groups := BuildFormSpec(map[string]string{}, nil, nil)
 	appID := findField(t, groups, "FEISHU_APP_ID")
 	if err := appID.Validate(""); err == nil {
 		t.Error("必填项空值应校验失败")
@@ -133,6 +134,40 @@ func TestBuildFormSpecValidate(t *testing.T) {
 	}
 	if err := size.Validate("abc"); err == nil {
 		t.Error("非法整数应校验失败")
+	}
+}
+
+// task_format:有示例 placeholder;注入的 DSL 校验器对非空值生效,nil 时放行(降级)。
+func TestBuildFormSpecTaskFormat(t *testing.T) {
+	validate := func(s string) error {
+		if strings.Contains(s, "bad") {
+			return fmt.Errorf("boom")
+		}
+		return nil
+	}
+	f := findField(t, BuildFormSpec(map[string]string{}, nil, validate), "TASK_FORMAT")
+	if !strings.Contains(f.Placeholder, "weekly") {
+		t.Errorf("task_format 应有 DSL 示例 placeholder, got %q", f.Placeholder)
+	}
+	if err := f.Validate(""); err != nil {
+		t.Errorf("空值(未配置)应通过: %v", err)
+	}
+	if err := f.Validate("good"); err != nil {
+		t.Errorf("校验器通过的值应通过: %v", err)
+	}
+	if err := f.Validate("bad"); err == nil {
+		t.Error("校验器拒绝的值应拦截")
+	}
+
+	f = findField(t, BuildFormSpec(map[string]string{}, nil, nil), "TASK_FORMAT")
+	if err := f.Validate("bad"); err != nil {
+		t.Errorf("未注入校验器时应放行: %v", err)
+	}
+
+	// 校验器只挂在 task_format 上,不影响其他字段
+	other := findField(t, BuildFormSpec(map[string]string{}, nil, validate), "EMAIL_DOMAIN")
+	if err := other.Validate("bad"); err != nil {
+		t.Errorf("其他字段不应受注入影响: %v", err)
 	}
 }
 

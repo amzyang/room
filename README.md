@@ -106,6 +106,7 @@ room login   # 完成用户授权
 room config list                      # 全部配置项的生效值与来源（secret 掩码）
 room config set feishu.app_id cli_x   # 写入全局配置（KEY 也接受环境变量名 FEISHU_APP_ID）
 room config set booking.room_level_id # 省略 VALUE：拉取飞书会议室层级树，多级下钻交互选择
+room config tasks                     # 交互式管理自动预订任务（booking.task_format，免手写 DSL）
 room config get EMAIL_DOMAIN          # 打印生效值（--source 附加来源）
 room config unset booking.room_size   # 从全局配置删除
 room config path                      # 打印全局配置文件路径
@@ -124,7 +125,8 @@ room config path                      # 打印全局配置文件路径
 若被更高层覆盖会当场提示。
 
 终端下裸 `room config` 进入 TUI 表单编辑全部配置；其中 `booking.room_level_id`
-在凭证可用时为层级树下拉选择（含「不限」），凭证缺失或拉取失败时回退为文本输入。
+在凭证可用时为层级树下拉选择（含「不限」），凭证缺失或拉取失败时回退为文本输入；
+`booking.task_format` 带 DSL 示例提示与语法校验，逐条引导编辑请用 `room config tasks`。
 
 缓存（用户凭证、节假日、user_id 映射、自动预订记录）存于配置文件旁的
 `cache/` 目录（默认 `~/.config/room/cache/`，随 `ROOM_CONFIG` /
@@ -151,14 +153,19 @@ release 二进制编译内置。显式设空（`--sentry-dsn=""`、`SENTRY_DSN=`
 
 ### TASK_FORMAT
 
+交互式管理请用 `room config tasks`（任务列表菜单 + 逐字段引导 + 保存前预览
+生成的 DSL 与命中日期，不必记语法）。直接手写 DSL 的格式：
+
 ```
 dayOfWeek,startTime-endTime,frequency[:interval[:startDate]],participants,title
 ```
 
+- `startTime`/`endTime`：`HH:MM:SS`（24 小时制）
 - `frequency`：`weekly` / `daily` / `monthly`；`weekly:2` 表示隔周；
-  `weekly:2:2025-04-21` 以 2025-04-21 为周期锚点
+  `weekly:2:2025-04-21` 以 2025-04-21 为周期锚点——间隔大于 1 时必须带锚点，
+  否则间隔不生效
 - `participants`：`:` 分隔；邮箱前缀自动补 `@EMAIL_DOMAIN`，`oc_` 前缀视为群聊 ID
-- 多任务用 `|` 分隔
+- 多任务用 `|` 分隔；标题与参与者不能含半角逗号或竖线（DSL 无转义）
 
 ```
 TASK_FORMAT="fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,17:30:00-18:30:00,weekly:2:2025-04-21,oc_xxxx,双周例会"

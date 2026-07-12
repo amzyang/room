@@ -71,6 +71,7 @@ func TestConfigSetValidation(t *testing.T) {
 		{"set", "booking.room_size", "abc"},
 		{"set", "feishu.auth_mode", "bogus"},
 		{"set", "unknown.key", "x"},
+		{"set", "booking.task_format", "wedn,10:00:00-11:00:00,weekly,,拼错的星期"},
 	}
 	for _, args := range tests {
 		if _, _, err := execConfigCmd(t, a, args...); err == nil {
@@ -333,6 +334,39 @@ func TestConfigUnknownKeyIsValidation(t *testing.T) {
 	}
 	if got := output.ExitCode(err); got != output.ExitValidation {
 		t.Errorf("未知 KEY 退出码 = %d, want %d", got, output.ExitValidation)
+	}
+}
+
+// 任务编辑器的两个入口（tasks 子命令 / set 省略 VALUE）在非 TTY 下 fail-fast，
+// hint 指引直接写 VALUE。
+func TestConfigTasksNonInteractiveFailsFast(t *testing.T) {
+	a := newConfigTestApp("unused.toml", nil)
+	for _, args := range [][]string{{"tasks"}, {"set", "booking.task_format"}} {
+		_, _, err := execConfigCmd(t, a, args...)
+		if err == nil {
+			t.Fatalf("%v 非交互应报错", args)
+		}
+		e := output.Classify(err)
+		if e.Type != output.TypeValidation || !strings.Contains(e.Hint, "set booking.task_format") {
+			t.Errorf("%v: type=%s hint=%q", args, e.Type, e.Hint)
+		}
+	}
+}
+
+// set 带 VALUE 仍是非交互直写路径，不受编辑器入口影响。
+func TestConfigSetTaskFormatValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	a := newConfigTestApp(path, nil)
+	dsl := "wed,10:00:00-11:30:00,weekly,alice:bob,周会"
+	if _, _, err := execConfigCmd(t, a, "set", "booking.task_format", dsl); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := config.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Values["TASK_FORMAT"] != dsl {
+		t.Errorf("写入结果不符: %q", doc.Values["TASK_FORMAT"])
 	}
 }
 

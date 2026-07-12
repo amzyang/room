@@ -11,6 +11,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/amzyang/room/booking"
 	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/feishu"
 )
@@ -27,7 +28,7 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	for k, e := range a.cfg.Entries {
 		effective[k] = e.Value
 	}
-	groups := config.BuildFormSpec(effective, a.loadLevelOptions(cmd))
+	groups := config.BuildFormSpec(effective, a.loadLevelOptions(cmd), booking.ValidateTaskFormat)
 
 	strVals := map[string]*string{}
 	var huhGroups []*huh.Group
@@ -104,11 +105,11 @@ func buildHuhField(f config.FieldSpec, strVals map[string]*string) huh.Field {
 	case config.FieldText:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
-		return huh.NewText().Title(f.Title).Lines(3).Value(&v).Validate(f.Validate)
+		return huh.NewText().Title(f.Title).Placeholder(f.Placeholder).Lines(3).Value(&v).Validate(f.Validate)
 	default:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
-		in := huh.NewInput().Title(f.Title).Value(&v).Validate(f.Validate)
+		in := huh.NewInput().Title(f.Title).Placeholder(f.Placeholder).Value(&v).Validate(f.Validate)
 		if f.Masked {
 			in = in.EchoMode(huh.EchoModePassword)
 		}

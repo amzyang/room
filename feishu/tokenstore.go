@@ -81,7 +81,7 @@ func (s *FileUserTokenStore) Delete() error {
 }
 
 func (s *FileUserTokenStore) Write(token *StoredUserToken) error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(token, "", "  ")

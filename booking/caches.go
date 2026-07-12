@@ -50,7 +50,7 @@ func (c *HolidayCache) Get(year string) *HolidayResponse {
 }
 
 func (c *HolidayCache) Save(year string, resp *HolidayResponse) error {
-	if err := os.MkdirAll(c.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(resp, "", "  ")
@@ -81,7 +81,7 @@ func (c *UserIDCache) Get(username string) string {
 
 func (c *UserIDCache) Set(username, userID string) error {
 	c.cache[username] = userID
-	if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.Path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(c.cache, "", "  ")
@@ -133,7 +133,7 @@ func (c *AutoBookingCache) Add(eventID string) {
 }
 
 func (c *AutoBookingCache) Save() error {
-	if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.Path), 0o700); err != nil {
 		return err
 	}
 	payload := struct {

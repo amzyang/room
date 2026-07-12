@@ -306,7 +306,7 @@ func newInitCmd(a *app) *cobra.Command {
 				return err
 			}
 			opts.jsonOut = a.jsonOut
-			return a.runInit(cmd.Context(), opts)
+			return a.runInit(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
 	fl := cmd.Flags()
@@ -320,7 +320,7 @@ func newInitCmd(a *app) *cobra.Command {
 //   - 默认（阻塞）：发起注册 → 展示授权链接（尽力打开浏览器）→ 原地轮询到应用创建完成。
 //   - --no-wait：仅发起注册并打印（含 device_code + 恢复命令）后立即返回。
 //   - --device-code <code>：跳过发起，用已有设备码恢复轮询换取并保存凭证。
-func (a *app) runInit(ctx context.Context, opts initOptions) error {
+func (a *app) runInit(ctx context.Context, w io.Writer, opts initOptions) error {
 	if err := validateResumeFlags(opts.noWait, opts.deviceCode); err != nil {
 		return err
 	}
@@ -336,13 +336,13 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 	// 恢复轮询模式：用已有 device_code 直接轮询换取应用凭证
 	if opts.deviceCode != "" {
 		if !opts.jsonOut {
-			fmt.Fprintln(a.streams.Out, "正在轮询应用创建结果...（在浏览器完成授权后将自动继续）")
+			fmt.Fprintln(w, "正在轮询应用创建结果...（在浏览器完成授权后将自动继续）")
 		}
 		creds, err := reg.Poll(ctx, opts.deviceCode, resumePollIntervalSec, resumePollExpiresInSec)
 		if err != nil {
 			return classifyDeviceFlowErr(err)
 		}
-		return a.finishInit(ctx, creds, oldAppID, oldAppSecret, tokenPath, opts.jsonOut)
+		return a.finishInit(ctx, w, creds, oldAppID, oldAppSecret, tokenPath, opts.jsonOut)
 	}
 
 	code, err := reg.Begin(ctx)
@@ -357,24 +357,24 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 
 	// 发起-即返回模式：打印设备码供后续 --device-code 恢复，不阻塞轮询
 	if opts.noWait {
-		emitAppRegistration(a.streams.Out, code, opts.jsonOut, true, opts.force)
+		emitAppRegistration(w, code, opts.jsonOut, true, opts.force)
 		return nil
 	}
 
 	// 默认阻塞模式：展示授权入口 + TTY 下尽力打开浏览器 + 原地轮询到完成
 	// （非 TTY 多为 agent/CI 宿主，弹浏览器是打扰而非帮助，与 login 同策略）
-	emitAppRegistration(a.streams.Out, code, opts.jsonOut, false, opts.force)
+	emitAppRegistration(w, code, opts.jsonOut, false, opts.force)
 	if a.streams.OutIsTerminal {
 		feishu.OpenBrowser(code.VerificationURIComplete)
 	}
 	if !opts.jsonOut {
-		fmt.Fprintln(a.streams.Out, "\n等待授权中...（在浏览器完成授权后将自动继续）")
+		fmt.Fprintln(w, "\n等待授权中...（在浏览器完成授权后将自动继续）")
 	}
 	creds, err := reg.Poll(ctx, code.DeviceCode, code.IntervalSec, code.ExpiresInSec)
 	if err != nil {
 		return classifyDeviceFlowErr(err)
 	}
-	return a.finishInit(ctx, creds, oldAppID, oldAppSecret, tokenPath, opts.jsonOut)
+	return a.finishInit(ctx, w, creds, oldAppID, oldAppSecret, tokenPath, opts.jsonOut)
 }
 
 // classifyDeviceFlowErr 设备码轮询错误归类：过期可重试，拒绝授权不可。
@@ -391,8 +391,8 @@ func classifyDeviceFlowErr(err error) error {
 
 // finishInit 注册成功后的收尾：写凭证 → 撤销旧应用登录凭证 → 提示覆盖风险。
 // 先落盘再撤销：写入失败时保留旧登录态，避免「新应用已创建、旧登录又被销毁」的双输局面。
-func (a *app) finishInit(ctx context.Context, creds *feishu.AppCredentials, oldAppID, oldAppSecret, tokenPath string, jsonOut bool) error {
-	if err := saveAppCredentials(a.streams.Out, a.cfg.Path, creds, jsonOut); err != nil {
+func (a *app) finishInit(ctx context.Context, w io.Writer, creds *feishu.AppCredentials, oldAppID, oldAppSecret, tokenPath string, jsonOut bool) error {
+	if err := saveAppCredentials(w, a.cfg.Path, creds, jsonOut); err != nil {
 		return err
 	}
 	a.revokeOldLoginBestEffort(ctx, oldAppID, oldAppSecret, tokenPath)
@@ -543,7 +543,7 @@ func newLoginCmd(a *app) *cobra.Command {
 				return err
 			}
 			opts.jsonOut = a.jsonOut
-			return a.runLogin(cmd.Context(), opts)
+			return a.runLogin(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
 	fl := cmd.Flags()
@@ -556,7 +556,7 @@ func newLoginCmd(a *app) *cobra.Command {
 //   - 默认（阻塞）：发起授权 → 展示授权链接（TTY 下尽力打开浏览器）→ 原地轮询到授权完成。
 //   - --no-wait：仅发起授权并打印（含 device_code + 恢复命令）后立即返回。
 //   - --device-code <code>：跳过发起，用已有设备码恢复轮询换取并保存用户凭证。
-func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
+func (a *app) runLogin(ctx context.Context, w io.Writer, opts loginOptions) error {
 	if err := validateResumeFlags(opts.noWait, opts.deviceCode); err != nil {
 		return err
 	}
@@ -580,13 +580,13 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 	// 恢复轮询模式：用已有 device_code 直接轮询换取用户凭证
 	if opts.deviceCode != "" {
 		if !opts.jsonOut {
-			fmt.Fprintln(a.streams.Out, "正在轮询授权结果...（在浏览器完成授权后将自动继续）")
+			fmt.Fprintln(w, "正在轮询授权结果...（在浏览器完成授权后将自动继续）")
 		}
 		token, err := feishu.PollDeviceLogin(ctx, auth, opts.deviceCode, resumePollIntervalSec, resumePollExpiresInSec)
 		if err != nil {
 			return classifyLoginErr(err)
 		}
-		return emitLoginOK(a.streams.Out, token, opts.jsonOut)
+		return emitLoginOK(w, token, opts.jsonOut)
 	}
 
 	device, err := auth.TokenClient.RequestDeviceAuthorization(ctx, userAuthScope)
@@ -600,23 +600,23 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 
 	// 发起-即返回模式：打印设备码供后续 --device-code 恢复，不阻塞轮询
 	if opts.noWait {
-		emitDeviceAuthorization(a.streams.Out, device, opts.jsonOut, true)
+		emitDeviceAuthorization(w, device, opts.jsonOut, true)
 		return nil
 	}
 
 	// 默认阻塞模式：展示授权入口 + TTY 下尽力打开浏览器 + 原地轮询到完成
-	emitDeviceAuthorization(a.streams.Out, device, opts.jsonOut, false)
+	emitDeviceAuthorization(w, device, opts.jsonOut, false)
 	if a.streams.OutIsTerminal {
 		feishu.OpenBrowser(deviceVerifyURL(device))
 	}
 	if !opts.jsonOut {
-		fmt.Fprintln(a.streams.Out, "\n等待授权中...（在浏览器完成授权后将自动继续）")
+		fmt.Fprintln(w, "\n等待授权中...（在浏览器完成授权后将自动继续）")
 	}
 	token, err := feishu.PollDeviceLogin(ctx, auth, device.DeviceCode, device.IntervalSec, device.ExpiresInSec)
 	if err != nil {
 		return classifyLoginErr(err)
 	}
-	return emitLoginOK(a.streams.Out, token, opts.jsonOut)
+	return emitLoginOK(w, token, opts.jsonOut)
 }
 
 // classifyLoginErr 登录轮询错误归类：过期可重试，其余归 auth。

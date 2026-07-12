@@ -22,6 +22,8 @@ type app struct {
 	loc     *time.Location
 	now     func() time.Time
 	cfg     *config.Resolved // Bootstrap 产物：生效配置与来源，config 命令族用
+	// streams 只承担进程级职责：TTY 检测、交互输入（prompter）、main 的错误信封。
+	// 命令输出（信封与人类可读结果）一律走 cobra 的 cmd.OutOrStdout()。
 	streams *output.Streams
 
 	// newService book/list/cancel 的服务构造缝隙，测试替换为 fake。

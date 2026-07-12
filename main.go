@@ -21,7 +21,7 @@ func main() {
 	root, a := newRootCmd(resolved)
 	err := root.Execute()
 	if err != nil {
-		output.WriteError(os.Stderr, err, a.jsonOut)
+		output.WriteError(a.streams.Err, err, a.jsonOut)
 		if output.Reportable(err) {
 			sentry.CaptureException(err)
 		}

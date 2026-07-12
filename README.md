@@ -125,8 +125,8 @@ room config path                      # 打印全局配置文件路径
 
 缓存（用户凭证、节假日、user_id 映射、自动预订记录）存于配置文件旁的
 `cache/` 目录（默认 `~/.config/room/cache/`，随 `ROOM_CONFIG` /
-`$XDG_CONFIG_HOME` 一同解析）。旧版遗留在工作目录下的 `.cache/`
-会在首次运行时自动整体迁移。
+`$XDG_CONFIG_HOME` 一同解析）。旧版遗留在工作目录下的 `.cache/` 不再读取，
+可直接删除（重新 `room login` 即可重建用户凭证）。
 
 ### 环境变量
 

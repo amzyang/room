@@ -21,24 +21,53 @@ go build -o room .
 ## 命令
 
 ```bash
-room auto            # 按 TASK_FORMAT 自动预订（默认演练模式，--run 实际执行）
-room book [input]    # 智能预订：自然语言（需 OPENAI_API_KEY）或 -d/-t/-p 参数
+room auto            # 按 TASK_FORMAT 自动预订（--dryrun 演练）
+room book [input]    # 智能预订：自然语言（需 OPENAI_API_KEY）或 -d/-t/--title/-p 参数
 room list [-d 31]    # 列出未来 N 天的日历事件
-room cancel [-d 31]  # 交互式取消自己组织的事件
-room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code/--json）
-room login           # OAuth 设备码流程授权用户身份
+room cancel          # 取消事件：交互式选择，或 --event-id <id> --yes 直接指定
+room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code）
+room login           # OAuth 设备码流程授权用户身份（--no-wait/--device-code 两段式）
 room notify [text]   # 通过自定义机器人 webhook 发送文本消息
 ```
 
-全局标志：`--run` 实际执行（默认演练）、`--debug` 输出 HTTP 请求详情。
+全局标志：`--dryrun` 演练模式（仅 auto 支持，其余命令传入直接报错，绝不静默真实执行）、
+`--json` 机读信封输出并禁用交互、`--debug` 输出 HTTP 请求详情。
 
 示例：
 
 ```bash
 room book "tom 2pm 1h shikai 团队周会"
-room book -d 12-01 -t 10:00-11:00 -p "alice bob oc_xxxx"
+room book -d 12-01 -t 10:00-11:00 -p "alice bob oc_xxxx" --title 项目周会
 room list -d 7
+room cancel --event-id <event_id> --yes
 ```
+
+## Agent / 脚本友好
+
+所有命令支持全局 `--json`，输出稳定的机读契约（agent 使用指南见
+[skills/room/SKILL.md](skills/room/SKILL.md)，可经 `npx skills add amzyang/room` 安装）：
+
+- **stdout**：每行一个成功信封 `{"ok":true,"data":...,"meta":...}`；
+- **stderr**：日志 + 失败时最后一行为错误信封
+  `{"ok":false,"error":{"type","message","hint","retryable","detail"}}`；
+- **`--json` 隐含非交互**：必填项缺失立即报错（exit 2），绝不挂起等待输入；
+- **退出码**：`0` 成功（book 的 exit 0 ⟺ 房间订上了）；`1` API/业务失败
+  （book 未订到细分 `error.type`：`no_room`/`conflict`/`holiday_skipped`）；
+  `2` 参数校验；`3` 认证/配置缺失；`10` 需显式确认（加 `--yes`/`--force`）。
+
+```bash
+room book -d 12-01 -t 10:00-11:00 --title 周会 --json
+# {"ok":true,"data":{"status":"booked","event_id":"...","room":{"id":"omm_x","name":"3F-A"},...}}
+room cancel --event-id <event_id> --yes --json
+# {"ok":true,"data":{"event_id":"...","status":"cancelled"}}   # 已删除则 already_cancelled，同样 exit 0
+```
+
+> **Breaking**：`room init --json` 的事件输出从裸 JSON 对象改为统一信封，
+> 原字段整体移入 `data`（字段名不变，如 `data.device_code`、`data.resume_command`）。
+>
+> **Breaking**：全局 `--run` 已移除。`room auto` 默认即真实批量预订，
+> 演练改为 `room auto --dryrun`；沿用旧 `--run` 的脚本/cron 会以 exit 2 报错，
+> 去掉该 flag 即可。
 
 ## 配置
 
@@ -57,7 +86,10 @@ room login   # 完成用户授权
 - 默认：展示授权链接（尽力打开浏览器）并原地轮询到创建完成；
 - `--no-wait`：仅发起注册并打印 `device_code` 后返回，之后用
   `room init --device-code <code>` 恢复轮询换取凭证（适合 agent/CI/无头环境两段式）；
-- `--json`：输出机读 JSON 事件（`app_registration` / `app_registered`）。
+- 全局 `--json`：输出机读事件信封（`app_registration` / `app_registered`）。
+
+`room login` 支持同样的 `--no-wait` / `--device-code` 两段式与 `--json` 事件
+（`device_authorization` / `login_ok`）。
 
 已有凭证时需加 `--force` 覆盖，会同时撤销旧应用的登录 token 并删除
 `.cache/feishu-user-token.json`，需重新 `room login`。
@@ -74,6 +106,7 @@ room config set booking.room_level_id # 省略 VALUE：拉取飞书会议室层�
 room config get TASK_OWNER            # 打印生效值（--source 附加来源）
 room config unset booking.room_size   # 从全局配置删除
 room config path                      # 打印全局配置文件路径
+# 以上子命令均支持 --json 信封输出
 ```
 
 全局配置文件为 `~/.config/room/config.toml`（`$XDG_CONFIG_HOME` 优先，

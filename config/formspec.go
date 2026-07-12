@@ -13,7 +13,6 @@ const (
 	FieldInput FieldKind = iota
 	FieldText
 	FieldSelect
-	FieldConfirm
 )
 
 // FieldSpec 一个表单字段的中间表示。
@@ -24,7 +23,7 @@ type FieldSpec struct {
 	Desc     string
 	Masked   bool     // secret 项掩码输入
 	Options  []string // 仅 FieldSelect
-	Initial  string   // 生效值预填(bool 为 "1"/"0")
+	Initial  string   // 生效值预填
 	Validate func(string) error
 }
 
@@ -42,7 +41,7 @@ var formGroups = []struct {
 	{"飞书", []string{"feishu"}},
 	{"预订", []string{"booking"}},
 	{"NLP(book 命令自然语言解析)", []string{"nlp"}},
-	{"通知与其他", []string{"notify", "sentry", "network"}},
+	{"通知与其他", []string{"notify", "sentry"}},
 }
 
 // BuildFormSpec 纯函数:schema + 生效值 → 表单中间表示。
@@ -84,11 +83,6 @@ func buildField(it Item, initial string) FieldSpec {
 	case it.Type == TypeEnum:
 		f.Kind = FieldSelect
 		f.Options = it.Enum
-		if initial == "" {
-			f.Initial = it.Default
-		}
-	case it.Type == TypeBool:
-		f.Kind = FieldConfirm
 		if initial == "" {
 			f.Initial = it.Default
 		}

@@ -26,7 +26,6 @@ type Type int
 const (
 	TypeString Type = iota
 	TypeInt
-	TypeBool // env 编码 "1"/"0"(对齐 ROOM_TLS_INSECURE 现有语义)
 	TypeList // env 编码逗号分隔;TOML 为字符串数组
 	TypeEnum
 )
@@ -88,8 +87,6 @@ var Registry = []Item{
 		Desc: "自然语言解析使用的模型"},
 	{EnvKey: "SENTRY_DSN", Section: "sentry", Key: "dsn", Type: TypeString, Secret: true,
 		Desc: "Sentry 错误上报 DSN(显式设空则禁用;未设置时 release 二进制回退编译内置)"},
-	{EnvKey: "ROOM_TLS_INSECURE", Section: "network", Key: "tls_insecure", Type: TypeBool, Default: "1",
-		Desc: "跳过 TLS 证书校验(默认开启,兼容内网代理;设 false 恢复严格校验)"},
 }
 
 // Sections 各节在 Registry 中的首现顺序。
@@ -150,8 +147,8 @@ func Lookup(arg string) (Item, error) {
 	return Item{}, fmt.Errorf("未知配置项 %q(用 room config list 查看全部)", arg)
 }
 
-// Normalize 校验并规范化用户输入为 env 字符串形态(list 逗号连接、bool "1"/"0"、enum 小写)。
-// 空值:string 允许(显式空,如禁用 Sentry)、list 表示空列表;int/bool/enum 拒绝(取消设置请用 unset)。
+// Normalize 校验并规范化用户输入为 env 字符串形态(list 逗号连接、enum 小写)。
+// 空值:string 允许(显式空,如禁用 Sentry)、list 表示空列表;int/enum 拒绝(取消设置请用 unset)。
 func (it Item) Normalize(raw string) (string, error) {
 	v := envutil.CleanEnvValue(raw)
 	switch it.Type {
@@ -163,14 +160,6 @@ func (it Item) Normalize(raw string) (string, error) {
 			return "", fmt.Errorf("%s 需要整数值,收到 %q", it.TOMLKey(), raw)
 		}
 		return v, nil
-	case TypeBool:
-		switch strings.ToLower(v) {
-		case "1", "true":
-			return "1", nil
-		case "0", "false":
-			return "0", nil
-		}
-		return "", fmt.Errorf("%s 需要布尔值(true/false/1/0),收到 %q", it.TOMLKey(), raw)
 	case TypeEnum:
 		for _, e := range it.Enum {
 			if strings.EqualFold(v, e) {

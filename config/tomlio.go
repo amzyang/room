@@ -74,13 +74,6 @@ func canonicalFromTOML(it Item, v any) (string, error) {
 		if n, ok := v.(int64); ok {
 			return strconv.FormatInt(n, 10), nil
 		}
-	case TypeBool:
-		if b, ok := v.(bool); ok {
-			if b {
-				return "1", nil
-			}
-			return "0", nil
-		}
 	case TypeList:
 		switch arr := v.(type) {
 		case []any:
@@ -115,8 +108,6 @@ func typeName(t Type) string {
 	switch t {
 	case TypeInt:
 		return "整数"
-	case TypeBool:
-		return "布尔"
 	case TypeList:
 		return "字符串数组"
 	}
@@ -227,11 +218,6 @@ func valueLiteral(it Item, v string) (string, error) {
 	switch it.Type {
 	case TypeInt:
 		return v, nil // Normalize/canonicalFromTOML 已保证是数字
-	case TypeBool:
-		if v == "0" {
-			return "false", nil
-		}
-		return "true", nil
 	case TypeList:
 		return tomlLiteral(envutil.ParseEnvList(v))
 	}
@@ -247,8 +233,6 @@ func placeholderLiteral(it Item) string {
 	switch it.Type {
 	case TypeInt:
 		return "0"
-	case TypeBool:
-		return "false"
 	case TypeList:
 		return "[]"
 	}

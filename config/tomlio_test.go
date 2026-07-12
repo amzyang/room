@@ -17,7 +17,6 @@ func TestWriteReadRoundtrip(t *testing.T) {
 		"FEISHU_AUTH_MODE":  "user",
 		"ROOM_LIST":         "会议室A,会议室B",
 		"ROOM_SIZE":         "15",
-		"ROOM_TLS_INSECURE": "0",
 		"SENTRY_DSN":        "", // 显式空必须往返保留
 	}
 
@@ -54,12 +53,11 @@ func TestRenderPlaceholdersAndComments(t *testing.T) {
 	}
 	s := string(out)
 	for _, want := range []string{
-		"room config",           // 文件头管理声明
-		"[feishu]",              // 分节
-		"# app_id = ",           // 未设置项为注释占位
-		"# room_size = 0",       // int 默认占位
-		"# tls_insecure = true", // bool 默认占位
-		"飞书应用 ID",               // Desc 注释
+		"room config",     // 文件头管理声明
+		"[feishu]",        // 分节
+		"# app_id = ",     // 未设置项为注释占位
+		"# room_size = 0", // int 默认占位
+		"飞书应用 ID",         // Desc 注释
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Render 输出缺少 %q:\n%s", want, s)

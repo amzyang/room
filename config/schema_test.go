@@ -46,6 +46,8 @@ func TestLookup(t *testing.T) {
 		{"nlp.model", "MODEL", false},
 		{"bogus_key_xyz", "", true},
 		{"feishu.bogus", "", true},
+		{"network.tls_insecure", "", true}, // 已移除:始终启用 TLS 证书校验
+		{"ROOM_TLS_INSECURE", "", true},
 	}
 	for _, tt := range tests {
 		it, err := Lookup(tt.arg)
@@ -91,11 +93,7 @@ func TestNormalize(t *testing.T) {
 	}{
 		{"ROOM_SIZE", "15", "15", false},
 		{"ROOM_SIZE", "abc", "", true},
-		{"ROOM_SIZE", "", "", true}, // int 不允许显式空,请用 unset
-		{"ROOM_TLS_INSECURE", "true", "1", false},
-		{"ROOM_TLS_INSECURE", "0", "0", false},
-		{"ROOM_TLS_INSECURE", "yes", "", true},
-		{"ROOM_TLS_INSECURE", "", "", true},
+		{"ROOM_SIZE", "", "", true},                 // int 不允许显式空,请用 unset
 		{"FEISHU_AUTH_MODE", "USER", "user", false}, // enum 大小写不敏感,归一化为小写
 		{"FEISHU_AUTH_MODE", "bogus", "", true},
 		{"FEISHU_AUTH_MODE", "", "", true},

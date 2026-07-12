@@ -27,12 +27,11 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	groups := config.BuildFormSpec(effective)
 
 	strVals := map[string]*string{}
-	boolVals := map[string]*bool{}
 	var huhGroups []*huh.Group
 	for _, g := range groups {
 		var fields []huh.Field
 		for _, f := range g.Fields {
-			fields = append(fields, buildHuhField(f, strVals, boolVals))
+			fields = append(fields, buildHuhField(f, strVals))
 		}
 		huhGroups = append(huhGroups, huh.NewGroup(fields...).Title(g.Title))
 	}
@@ -46,16 +45,9 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 		return err
 	}
 
-	results := make(map[string]string, len(strVals)+len(boolVals))
+	results := make(map[string]string, len(strVals))
 	for k, p := range strVals {
 		results[k] = *p
-	}
-	for k, p := range boolVals {
-		if *p {
-			results[k] = "1"
-		} else {
-			results[k] = "0"
-		}
 	}
 	if err := config.ApplyFormResult(doc, results); err != nil {
 		return err
@@ -79,17 +71,13 @@ func runConfigTUI(cmd *cobra.Command, a *app) error {
 	return nil
 }
 
-func buildHuhField(f config.FieldSpec, strVals map[string]*string, boolVals map[string]*bool) huh.Field {
+func buildHuhField(f config.FieldSpec, strVals map[string]*string) huh.Field {
 	switch f.Kind {
 	case config.FieldSelect:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v
 		return huh.NewSelect[string]().Title(f.Title).Description(f.Desc).
 			Options(huh.NewOptions(f.Options...)...).Value(&v)
-	case config.FieldConfirm:
-		b := f.Initial != "0"
-		boolVals[f.Item.EnvKey] = &b
-		return huh.NewConfirm().Title(f.Title).Description(f.Desc).Value(&b)
 	case config.FieldText:
 		v := f.Initial
 		strVals[f.Item.EnvKey] = &v

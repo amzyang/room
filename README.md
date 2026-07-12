@@ -187,9 +187,3 @@ go build -o room .
 发布：打 tag（`v*`）推送后由 GitHub Actions goreleaser 构建
 darwin/linux × amd64/arm64 并更新 Homebrew tap（需配置仓库 secret
 `HOMEBREW_TAP_GITHUB_TOKEN`）。
-
-## 安全说明
-
-默认 `ROOM_TLS_INSECURE=1` 跳过 TLS 证书校验，这是从原项目继承的行为
-（兼容内网 TLS 中间人代理环境）。在证书链正常的环境建议设 `ROOM_TLS_INSECURE=0`
-恢复严格校验。

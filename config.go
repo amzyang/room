@@ -35,11 +35,6 @@ type bookingService interface {
 	AutoBook(ctx context.Context, dryRun bool) ([]booking.BookResult, error)
 }
 
-// tlsInsecure ROOM_TLS_INSECURE 默认开启（对齐原 Node 版全局关闭 TLS 校验），设 0 关闭。
-func tlsInsecure() bool {
-	return env("ROOM_TLS_INSECURE") != "0"
-}
-
 // newBookingService 组装预订服务（唯一的配置校验层），并完成初始化。
 func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Service, error) {
 	appID := env("FEISHU_APP_ID")
@@ -65,14 +60,13 @@ func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Serv
 		userTokenPath = defaultUserTokenPath
 	}
 
-	httpClient := feishu.NewHTTPClient(tlsInsecure())
+	httpClient := feishu.NewHTTPClient()
 	api := feishu.NewAPI(feishu.Config{
 		AppID:         appID,
 		AppSecret:     appSecret,
 		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
 		UserTokenPath: userTokenPath,
 		Debug:         a.debug,
-		TLSInsecure:   tlsInsecure(),
 	}, httpClient, a.log, a.now, a.loc)
 
 	service := &booking.Service{
@@ -122,7 +116,7 @@ func (a *app) newNLPParser() *nlp.Parser {
 		APIKey:  env("OPENAI_API_KEY"),
 		BaseURL: base,
 		Model:   model,
-		HTTP:    feishu.NewHTTPClient(tlsInsecure()),
+		HTTP:    feishu.NewHTTPClient(),
 		Log:     a.log,
 		Clock:   a.now,
 		Loc:     a.loc,

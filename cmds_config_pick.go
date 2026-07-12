@@ -142,8 +142,7 @@ func runConfigPickRoomLevel(cmd *cobra.Command, a *app) error {
 		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
 		UserTokenPath: userTokenPath,
 		Debug:         a.debug,
-		TLSInsecure:   tlsInsecure(),
-	}, feishu.NewHTTPClient(tlsInsecure()), a.log, a.now, a.loc)
+	}, feishu.NewHTTPClient(), a.log, a.now, a.loc)
 
 	level, err := pickRoomLevel(cmd.Context(), api, selectLevelHuh)
 	if err != nil {

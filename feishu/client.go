@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,17 +26,11 @@ type Config struct {
 	AuthMode      AuthMode
 	UserTokenPath string
 	Debug         bool
-	TLSInsecure   bool
 }
 
-// NewHTTPClient 构建共享的 HTTP 客户端；insecure 为 true 时跳过 TLS 证书校验
-// （对齐原 Node 版 NODE_TLS_REJECT_UNAUTHORIZED=0，经 ROOM_TLS_INSECURE=0 可关闭）。
-func NewHTTPClient(insecure bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
+// NewHTTPClient 构建共享的 HTTP 客户端。
+func NewHTTPClient() *http.Client {
+	return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: 30 * time.Second}
 }
 
 // API 飞书开放平台客户端：SDK 封装 + 身份决策 + 30 分钟内存缓存。

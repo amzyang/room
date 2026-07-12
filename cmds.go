@@ -269,7 +269,7 @@ func rejectTaintedDeviceCode(code string) error {
 		return nil
 	}
 	return output.Errf(output.TypeAPI,
-		"疑似响应被篡改：设 ROOM_TLS_INSECURE=0 开启证书校验后重试",
+		"疑似响应被篡改，请检查网络环境后重试",
 		"服务端返回的 device_code 含非法字符")
 }
 
@@ -334,7 +334,7 @@ func (a *app) runInit(ctx context.Context, opts initOptions) error {
 	if tokenPath == "" {
 		tokenPath = defaultUserTokenPath
 	}
-	reg := &feishu.AppRegistrar{HTTP: feishu.NewHTTPClient(tlsInsecure()), Log: a.log, Clock: a.now}
+	reg := &feishu.AppRegistrar{HTTP: feishu.NewHTTPClient(), Log: a.log, Clock: a.now}
 
 	// 恢复轮询模式：用已有 device_code 直接轮询换取应用凭证
 	if opts.deviceCode != "" {
@@ -426,7 +426,7 @@ func checkExistingAppCredentials(appID, appSecret string, force bool) error {
 func (a *app) revokeOldLoginBestEffort(ctx context.Context, oldAppID, oldAppSecret, tokenPath string) {
 	store := &feishu.FileUserTokenStore{Path: tokenPath}
 	if oldAppID != "" && oldAppSecret != "" {
-		client := &feishu.OAuthClient{HTTP: feishu.NewHTTPClient(tlsInsecure()), AppID: oldAppID, AppSecret: oldAppSecret}
+		client := &feishu.OAuthClient{HTTP: feishu.NewHTTPClient(), AppID: oldAppID, AppSecret: oldAppSecret}
 		feishu.RevokeStoredTokensBestEffort(ctx, store, client, a.log)
 	}
 	if err := store.Delete(); err != nil {
@@ -580,7 +580,7 @@ func (a *app) runLogin(ctx context.Context, opts loginOptions) error {
 		userTokenPath = defaultUserTokenPath
 	}
 
-	httpClient := feishu.NewHTTPClient(tlsInsecure())
+	httpClient := feishu.NewHTTPClient()
 	auth := &feishu.Auth{
 		Mode:        feishu.AuthModeAuto,
 		TokenClient: &feishu.OAuthClient{HTTP: httpClient, AppID: appID, AppSecret: appSecret},
@@ -718,7 +718,7 @@ func newNotifyCmd(a *app) *cobra.Command {
 			client := &feishu.WebhookClient{
 				URL:    url,
 				Secret: env("FEISHU_BOT_WEBHOOK_SECRET"),
-				Post:   feishu.NewWebhookPoster(feishu.NewHTTPClient(tlsInsecure())),
+				Post:   feishu.NewWebhookPoster(feishu.NewHTTPClient()),
 				Clock:  a.now,
 			}
 			if err := client.SendText(message); err != nil {

@@ -42,7 +42,6 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 		kind FieldKind
 	}{
 		{"FEISHU_AUTH_MODE", FieldSelect},
-		{"ROOM_TLS_INSECURE", FieldConfirm},
 		{"TASK_FORMAT", FieldText},
 		{"FEISHU_USER_AUTH_SCOPE", FieldText},
 		{"FEISHU_APP_ID", FieldInput},
@@ -69,12 +68,9 @@ func TestBuildFormSpecInitial(t *testing.T) {
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Initial != "cli_x" {
 		t.Errorf("app_id Initial = %q", f.Initial)
 	}
-	// 生效值缺失时 Select/Confirm 回退默认,保证控件有合法初值
+	// 生效值缺失时 Select 回退默认,保证控件有合法初值
 	if f := findField(t, groups, "FEISHU_AUTH_MODE"); f.Initial != "auto" {
 		t.Errorf("auth_mode Initial = %q, want auto", f.Initial)
-	}
-	if f := findField(t, groups, "ROOM_TLS_INSECURE"); f.Initial != "1" {
-		t.Errorf("tls_insecure Initial = %q, want 1", f.Initial)
 	}
 }
 
@@ -103,12 +99,11 @@ func TestApplyFormResult(t *testing.T) {
 	doc.Values["ROOM_LEVEL_ID"] = "lvl_old"
 
 	err := ApplyFormResult(doc, map[string]string{
-		"SENTRY_DSN":        "",        // 显式空保留
-		"TASK_OWNER":        "",        // 已设置的清空 = unset
-		"ROOM_LEVEL_ID":     "lvl_new", // 覆盖
-		"ROOM_LIST":         " A , B ", // 规范化
-		"ROOM_TLS_INSECURE": "0",
-		"EMAIL_DOMAIN":      "", // 本就未设置,保持未设置
+		"SENTRY_DSN":    "",        // 显式空保留
+		"TASK_OWNER":    "",        // 已设置的清空 = unset
+		"ROOM_LEVEL_ID": "lvl_new", // 覆盖
+		"ROOM_LIST":     " A , B ", // 规范化
+		"EMAIL_DOMAIN":  "",        // 本就未设置,保持未设置
 	})
 	if err != nil {
 		t.Fatal(err)

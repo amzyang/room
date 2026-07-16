@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -55,14 +56,61 @@ func newConfigCmd(a *app) *cobra.Command {
 func newConfigTasksCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tasks",
-		Short: "交互式管理自动预订任务（booking.task_format）",
+		Short: "交互式管理自动预订任务（--json 非交互输出解析后的任务列表）",
 		Long: "任务列表菜单中新增/编辑/复制/删除自动预订任务，逐字段引导填写并在保存前\n" +
-			"预览生成的 DSL 与接下来的命中日期。改动在「保存并退出」后写入 config.toml。",
+			"预览生成的 DSL 与接下来的命中日期。改动在「保存并退出」后写入 config.toml。\n" +
+			"--json 时不进编辑器，输出解析后的任务列表（data.raw 为原始 DSL）供 agent 消费。",
 		Args: validationArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if a.jsonOut {
+				return emitTasksJSON(cmd.OutOrStdout(), env("TASK_FORMAT"))
+			}
+			if !a.interactive() {
+				return output.Errf(output.TypeValidation,
+					"非交互查看用 room config tasks --json；编辑用 room config set booking.task_format",
+					"任务编辑器需要终端交互")
+			}
 			return runConfigTasksEditor(cmd, a)
 		},
 	}
+}
+
+// taskJSONItem config tasks --json 的单条任务（booking.Task 的稳定 JSON 形态）。
+type taskJSONItem struct {
+	DayOfWeek    string   `json:"day_of_week"`
+	StartTime    string   `json:"start_time"`
+	EndTime      string   `json:"end_time"`
+	Frequency    string   `json:"frequency"`
+	Interval     int      `json:"interval"`
+	StartDate    string   `json:"start_date,omitempty"`
+	Participants []string `json:"participants"`
+	Title        string   `json:"title"`
+}
+
+// emitTasksJSON 解析 TASK_FORMAT 输出结构化任务列表；DSL 无效归 config（配置坏了）。
+// 空配置输出空列表 exit 0。
+func emitTasksJSON(w io.Writer, raw string) error {
+	if err := booking.ValidateTaskFormat(raw); err != nil {
+		return output.Wrap(output.TypeConfig,
+			"在终端运行 room config tasks 交互修复，或 room config set booking.task_format 重写", err)
+	}
+	tasks := booking.ParseTaskFormat(raw)
+	items := make([]taskJSONItem, 0, len(tasks))
+	for _, t := range tasks {
+		p := t.Participants
+		if p == nil {
+			p = []string{}
+		}
+		items = append(items, taskJSONItem{
+			DayOfWeek: t.DayOfWeek, StartTime: t.StartTime, EndTime: t.EndTime,
+			Frequency: t.Frequency, Interval: t.Interval, StartDate: t.StartDate,
+			Participants: p, Title: t.Title,
+		})
+	}
+	return output.WriteSuccess(w, struct {
+		Raw   string         `json:"raw"`
+		Tasks []taskJSONItem `json:"tasks"`
+	}{raw, items}, &output.Meta{Count: len(items)})
 }
 
 // sourceSlug JSON 输出用的稳定来源标识（人类表格用 Source.String()）。

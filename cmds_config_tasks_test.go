@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/amzyang/room/booking"
+	"github.com/amzyang/room/output"
 )
 
 var taskTestLoc, _ = time.LoadLocation("Asia/Shanghai")
@@ -322,5 +324,89 @@ func TestPreviewTasks(t *testing.T) {
 		Frequency: "weekly", Interval: 1, StartDate: "2099-01-01"}
 	if got := previewTasks([]booking.Task{never}, taskTestNow, taskTestLoc); !strings.Contains(got, "命中：无") {
 		t.Errorf("扫描窗口内无命中应提示: %s", got)
+	}
+}
+
+func TestConfigTasksJSON(t *testing.T) {
+	t.Setenv("TASK_FORMAT",
+		"fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,09:00:00-09:30:00,daily:2:2026-07-01,,站会")
+	a := newConfigTestApp("", nil)
+	a.jsonOut = true
+
+	out, _, err := execConfigCmd(t, a, "tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Raw   string `json:"raw"`
+			Tasks []struct {
+				DayOfWeek    string   `json:"day_of_week"`
+				StartTime    string   `json:"start_time"`
+				Frequency    string   `json:"frequency"`
+				Interval     int      `json:"interval"`
+				StartDate    string   `json:"start_date"`
+				Participants []string `json:"participants"`
+				Title        string   `json:"title"`
+			} `json:"tasks"`
+		} `json:"data"`
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("非法 JSON: %v: %s", err, out)
+	}
+	if !env.OK || env.Meta.Count != 2 || len(env.Data.Tasks) != 2 || env.Data.Raw == "" {
+		t.Fatalf("信封不符: %+v", env)
+	}
+	first, second := env.Data.Tasks[0], env.Data.Tasks[1]
+	if first.DayOfWeek != "fri" || first.Frequency != "weekly" || first.Interval != 1 ||
+		first.Title != "项目周会" || len(first.Participants) != 2 {
+		t.Errorf("第一条任务解析不符: %+v", first)
+	}
+	if second.Interval != 2 || second.StartDate != "2026-07-01" || len(second.Participants) != 0 {
+		t.Errorf("第二条任务解析不符: %+v", second)
+	}
+}
+
+func TestConfigTasksJSONEmpty(t *testing.T) {
+	t.Setenv("TASK_FORMAT", "")
+	a := newConfigTestApp("", nil)
+	a.jsonOut = true
+
+	out, _, err := execConfigCmd(t, a, "tasks")
+	if err != nil {
+		t.Fatalf("空配置应输出空列表而非报错: %v", err)
+	}
+	if !strings.Contains(out, `"tasks":[]`) {
+		t.Errorf("空配置应输出 []: %s", out)
+	}
+}
+
+func TestConfigTasksJSONInvalidDSLIsConfigError(t *testing.T) {
+	t.Setenv("TASK_FORMAT", "xxx,bad")
+	a := newConfigTestApp("", nil)
+	a.jsonOut = true
+
+	_, _, err := execConfigCmd(t, a, "tasks")
+	if err == nil {
+		t.Fatal("无效 DSL 应报错")
+	}
+	if e := output.Classify(err); e.Type != output.TypeConfig {
+		t.Errorf("error.type = %s, want config", e.Type)
+	}
+}
+
+func TestConfigTasksNonInteractiveWithoutJSON(t *testing.T) {
+	a := newConfigTestApp("", nil)
+	_, _, err := execConfigCmd(t, a, "tasks")
+	if err == nil {
+		t.Fatal("非交互且非 --json 应明确报错而非启动编辑器")
+	}
+	e := output.Classify(err)
+	if e.Type != output.TypeValidation || !strings.Contains(e.Hint, "--json") {
+		t.Errorf("应归 validation 且 hint 指向 --json: type=%s hint=%q", e.Type, e.Hint)
 	}
 }

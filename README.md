@@ -27,6 +27,8 @@ room list [-d 31]    # 列出日历事件（--date 查单日、--mine 仅你组�
 room cancel          # 取消事件：交互式选择，或 --event-id <id> --yes 直接指定
 room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code）
 room login           # OAuth 设备码流程授权用户身份（--no-wait/--device-code 两段式）
+room whoami          # 显示当前登录身份与凭证有效期（未登录/已过期 exit 3）
+room logout          # 撤销并删除本地用户凭证（幂等）
 room notify [text]   # 通过自定义机器人 webhook 发送文本消息（--test 发送测试消息）
 ```
 

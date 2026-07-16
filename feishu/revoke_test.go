@@ -94,35 +94,42 @@ func (f *fakeRevoker) RevokeToken(_ context.Context, token, hint string) error {
 func TestRevokeStoredTokensBestEffort(t *testing.T) {
 	boom := errors.New("boom")
 	tests := []struct {
-		name      string
-		token     *StoredUserToken
-		fail      map[string]error
-		wantCalls [][2]string
+		name        string
+		token       *StoredUserToken
+		fail        map[string]error
+		wantCalls   [][2]string
+		wantRevoked bool
 	}{
-		{name: "store 空为 no-op", token: nil, wantCalls: nil},
+		{name: "store 空为 no-op", token: nil, wantCalls: nil, wantRevoked: false},
 		{
-			name:      "优先撤 refresh_token，成功即止",
-			token:     validToken(),
-			wantCalls: [][2]string{{"valid-refresh", "refresh_token"}},
+			name:        "优先撤 refresh_token，成功即止",
+			token:       validToken(),
+			wantCalls:   [][2]string{{"valid-refresh", "refresh_token"}},
+			wantRevoked: true,
 		},
 		{
-			name:      "refresh 失败退回 access_token",
-			token:     validToken(),
-			fail:      map[string]error{"valid-refresh": boom},
-			wantCalls: [][2]string{{"valid-refresh", "refresh_token"}, {"valid-access", "access_token"}},
+			name:        "refresh 失败退回 access_token",
+			token:       validToken(),
+			fail:        map[string]error{"valid-refresh": boom},
+			wantCalls:   [][2]string{{"valid-refresh", "refresh_token"}, {"valid-access", "access_token"}},
+			wantRevoked: true,
 		},
 		{
-			name:      "两者都失败仅告警不 panic",
-			token:     validToken(),
-			fail:      map[string]error{"valid-refresh": boom, "valid-access": boom},
-			wantCalls: [][2]string{{"valid-refresh", "refresh_token"}, {"valid-access", "access_token"}},
+			name:        "两者都失败仅告警不 panic",
+			token:       validToken(),
+			fail:        map[string]error{"valid-refresh": boom, "valid-access": boom},
+			wantCalls:   [][2]string{{"valid-refresh", "refresh_token"}, {"valid-access", "access_token"}},
+			wantRevoked: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			revoker := &fakeRevoker{fail: tt.fail}
 			store := &memoryStore{token: tt.token}
-			RevokeStoredTokensBestEffort(context.Background(), store, revoker, slog.New(slog.DiscardHandler))
+			revoked := RevokeStoredTokensBestEffort(context.Background(), store, revoker, slog.New(slog.DiscardHandler))
+			if revoked != tt.wantRevoked {
+				t.Errorf("revoked = %v, want %v", revoked, tt.wantRevoked)
+			}
 			if len(revoker.calls) != len(tt.wantCalls) {
 				t.Fatalf("calls = %v, want %v", revoker.calls, tt.wantCalls)
 			}

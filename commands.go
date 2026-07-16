@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/amzyang/room/config"
+	"github.com/amzyang/room/feishu"
 	"github.com/amzyang/room/logx"
 	"github.com/amzyang/room/output"
 )
@@ -32,6 +33,11 @@ type app struct {
 
 	// sentryTransport sentry 自检命令的发送缝隙：测试注入 fake；nil 时 SDK 用默认 HTTPTransport。
 	sentryTransport sentry.Transport
+
+	// tokenStore whoami/logout 的本地凭证缝隙；nil 时懒初始化为 FileUserTokenStore。
+	tokenStore userTokenStore
+	// tokenRevoker logout 远端撤销缝隙；nil 时按应用凭证构造真实 OAuthClient。
+	tokenRevoker feishu.TokenRevoker
 }
 
 func newRootCmd(cfg *config.Resolved) (*cobra.Command, *app) {
@@ -54,6 +60,7 @@ Agent/脚本快速上手（全程非交互）：
   room init --no-wait --json                     两段式创建应用（返回 device_code 与恢复命令）
   room init --device-code <code> --json          用户授权后恢复，写入应用凭证
   room login --no-wait --json                    两段式用户授权（同上）
+  room whoami --json                             查看登录身份与凭证有效期
   room book -d 07-15 -t 14:00-15:00 --title 周会 --json
   room list --json                               列出日程（events[].event_id 供 cancel 用）
   room cancel --event-id <id> --yes --json       取消事件（幂等）
@@ -124,6 +131,8 @@ Agent/脚本快速上手（全程非交互）：
 		newConfigCmd(a),
 		newInitCmd(a),
 		newLoginCmd(a),
+		newLogoutCmd(a),
+		newWhoamiCmd(a),
 		newNotifyCmd(a),
 		newSentryCmd(a),
 	)

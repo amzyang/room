@@ -131,11 +131,10 @@ func (s *Service) processHolidayData(data *HolidayResponse) {
 	}
 }
 
-// ListMyEvents 列出未来 days 天内的日历事件（按开始时间升序，过滤已取消/已删除）。
+// ListEvents 列出 [from, to) 窗口内的日历事件（按开始时间升序，过滤已取消/已删除）。
 // organizedByMeOnly 为 true 时仅保留本人组织的事件。
-func (s *Service) ListMyEvents(ctx context.Context, days int, organizedByMeOnly bool) ([]EventSummary, error) {
-	now := s.Clock()
-	events, err := s.API.GetCalendarEvents(ctx, now, now.AddDate(0, 0, days))
+func (s *Service) ListEvents(ctx context.Context, from, to time.Time, organizedByMeOnly bool) ([]EventSummary, error) {
+	events, err := s.API.GetCalendarEvents(ctx, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +181,8 @@ func (s *Service) ListMyEvents(ctx context.Context, days int, organizedByMeOnly 
 		return formatted[i].StartTimestamp < formatted[j].StartTimestamp
 	})
 
-	s.Log.Info(fmt.Sprintf("获取到 %d 个未来 %d 天的日历事件", len(formatted), days))
+	s.Log.Info(fmt.Sprintf("获取到 %d 个日历事件（%s ~ %s）", len(formatted),
+		from.In(s.Loc).Format("2006-01-02"), to.In(s.Loc).Format("2006-01-02")))
 	return formatted, nil
 }
 

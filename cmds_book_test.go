@@ -31,6 +31,8 @@ type fakeBookingSvc struct {
 	gotParticipants                     []string
 	gotCancelID                         string
 	gotAutoDryRun                       bool
+	gotFrom, gotTo                      time.Time
+	gotMine                             bool
 }
 
 func (f *fakeBookingSvc) AutoBook(_ context.Context, dryRun bool) ([]booking.BookResult, error) {
@@ -38,7 +40,8 @@ func (f *fakeBookingSvc) AutoBook(_ context.Context, dryRun bool) ([]booking.Boo
 	return f.autoResults, f.autoErr
 }
 
-func (f *fakeBookingSvc) ListMyEvents(context.Context, int, bool) ([]booking.EventSummary, error) {
+func (f *fakeBookingSvc) ListEvents(_ context.Context, from, to time.Time, organizedByMeOnly bool) ([]booking.EventSummary, error) {
+	f.gotFrom, f.gotTo, f.gotMine = from, to, organizedByMeOnly
 	return f.events, f.listErr
 }
 

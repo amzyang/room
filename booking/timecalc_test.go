@@ -60,8 +60,11 @@ func TestIsOrganizedBy(t *testing.T) {
 }
 
 func TestFormatEventList(t *testing.T) {
-	if got := FormatEventList(nil, 31); got != "未来 31 天内没有日历事件\n" {
+	if got := FormatEventList(nil, "未来 31 天内", false); got != "未来 31 天内没有日历事件\n" {
 		t.Errorf("empty list output = %q", got)
+	}
+	if got := FormatEventList(nil, "2026-07-20 当天", true); got != "2026-07-20 当天没有你组织的日历事件\n" {
+		t.Errorf("empty mine list output = %q", got)
 	}
 
 	events := []EventSummary{
@@ -80,9 +83,9 @@ func TestFormatEventList(t *testing.T) {
 			EndTime:   "2026-07-13 15:00:00",
 		},
 	}
-	got := FormatEventList(events, 31)
+	got := FormatEventList(events, "未来 31 天内", false)
 
-	want := "\n未来 31 天的日历事件（共 2 个）:\n" +
+	want := "\n未来 31 天内的日历事件（共 2 个）:\n" +
 		strings.Repeat("=", 80) + "\n" +
 		"1. 团队周会\n" +
 		"   时间: 2026-07-12 10:00:00 - 2026-07-12 11:00:00\n" +
@@ -97,6 +100,10 @@ func TestFormatEventList(t *testing.T) {
 		"\n"
 	if got != want {
 		t.Errorf("FormatEventList golden mismatch:\ngot:\n%q\nwant:\n%q", got, want)
+	}
+
+	if mine := FormatEventList(events, "未来 7 天内", true); !strings.HasPrefix(mine, "\n未来 7 天内你组织的日历事件（共 2 个）:\n") {
+		t.Errorf("mine header mismatch: %q", mine)
 	}
 
 	for _, line := range strings.Split(got, "\n") {

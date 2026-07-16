@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/amzyang/room/booking"
 	"github.com/amzyang/room/config"
@@ -46,7 +47,7 @@ func (a *app) newFeishuAPI(httpClient *http.Client) *feishu.API {
 
 // bookingService auto/book/list/cancel 命令依赖的服务能力（测试注入 fake）。
 type bookingService interface {
-	ListMyEvents(ctx context.Context, days int, organizedByMeOnly bool) ([]booking.EventSummary, error)
+	ListEvents(ctx context.Context, from, to time.Time, organizedByMeOnly bool) ([]booking.EventSummary, error)
 	CancelEvent(ctx context.Context, eventID string) (*booking.CancelOutcome, error)
 	BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string) (*booking.BookResult, error)
 	AutoBook(ctx context.Context, dryRun bool) ([]booking.BookResult, error)

@@ -59,23 +59,66 @@ conflict / holiday_skipped / no_participants / failed；批量语义整体 exit 
 	}
 }
 
+// listWindow 计算 list/cancel 的查询窗口与范围描述（纯函数）。
+// date 非空查单日 [date 00:00, 次日 00:00)，与显式 --days 互斥；否则查未来 days 天。
+func listWindow(now time.Time, days int, daysChanged bool, date string, loc *time.Location) (from, to time.Time, scope string, err error) {
+	if date != "" {
+		if daysChanged {
+			return time.Time{}, time.Time{}, "", output.Errf(output.TypeValidation,
+				"--date 查单日、--days 查未来窗口，二选一", "--date 与 --days 互斥")
+		}
+		if shortDateRegex.MatchString(date) {
+			date = fmt.Sprintf("%s-%s", now.In(loc).Format("2006"), date)
+		}
+		normalized, err := normalizeDate(date, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, "", output.Errf(output.TypeValidation,
+				"使用 MM-DD 或 YYYY-MM-DD 格式", "无效的日期格式: %s", date)
+		}
+		from, _ = time.ParseInLocation("2006-01-02", normalized, loc)
+		return from, from.AddDate(0, 0, 1), normalized + " 当天", nil
+	}
+	if days < 1 {
+		return time.Time{}, time.Time{}, "", output.Errf(output.TypeValidation,
+			"--days 需为正整数", "无效的天数: %d", days)
+	}
+	return now, now.AddDate(0, 0, days), fmt.Sprintf("未来 %d 天内", days), nil
+}
+
+// listData list --json 的 data 载荷：--days 模式含 days，--date 模式含 date。
+type listData struct {
+	Days   int                    `json:"days,omitempty"`
+	Date   string                 `json:"date,omitempty"`
+	Mine   bool                   `json:"mine"`
+	Events []booking.EventSummary `json:"events"`
+}
+
 func newListCmd(a *app) *cobra.Command {
 	var days int
+	var date string
+	var mine bool
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "列出未来的日历事件",
-		Long: `列出未来 N 天的日历事件（默认 31 天，过滤已取消/删除）。
+		Short: "列出日历事件（--date 查单日，--mine 仅你组织的）",
+		Long: `列出日历事件（默认未来 31 天，过滤已取消/删除）。
+--date 查指定单日（MM-DD 补当年 / YYYY-MM-DD，与 --days 互斥）；
+--mine 仅显示你组织的事件（即 room cancel 的候选集）。
 --json 输出 data.events[]，其中 event_id 可直接用于 room cancel --event-id。`,
 		Example: `  room list -d 7
+  room list --date 07-20 --mine
   room list --json`,
 		Args: validationArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			from, to, scope, err := listWindow(a.now().In(a.loc), days, cmd.Flags().Changed("days"), date, a.loc)
+			if err != nil {
+				return err
+			}
 			service, err := a.newService(ctx, false)
 			if err != nil {
 				return err
 			}
-			events, err := service.ListMyEvents(ctx, days, false)
+			events, err := service.ListEvents(ctx, from, to, mine)
 			if err != nil {
 				return err
 			}
@@ -83,16 +126,21 @@ func newListCmd(a *app) *cobra.Command {
 				if events == nil {
 					events = []booking.EventSummary{}
 				}
-				return output.WriteSuccess(cmd.OutOrStdout(), struct {
-					Days   int                    `json:"days"`
-					Events []booking.EventSummary `json:"events"`
-				}{days, events}, &output.Meta{Count: len(events)})
+				data := listData{Mine: mine, Events: events}
+				if date != "" {
+					data.Date = from.Format("2006-01-02")
+				} else {
+					data.Days = days
+				}
+				return output.WriteSuccess(cmd.OutOrStdout(), data, &output.Meta{Count: len(events)})
 			}
-			fmt.Fprint(cmd.OutOrStdout(), booking.FormatEventList(events, days))
+			fmt.Fprint(cmd.OutOrStdout(), booking.FormatEventList(events, scope, mine))
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&days, "days", "d", defaultCancelDays, "显示未来几天的事件")
+	cmd.Flags().IntVarP(&days, "days", "d", defaultCancelDays, "显示未来几天的事件（与 --date 互斥）")
+	cmd.Flags().StringVar(&date, "date", "", "只看指定日期（MM-DD 或 YYYY-MM-DD）")
+	cmd.Flags().BoolVar(&mine, "mine", false, "仅显示你组织的事件（即 cancel 的候选集）")
 	return cmd
 }
 
@@ -126,6 +174,14 @@ func newCancelCmd(a *app) *cobra.Command {
 				return output.Errf(output.TypeConfirmationRequired, "加 --yes 确认取消",
 					"取消事件 %s 需要显式确认", eventID)
 			}
+			var from, to time.Time
+			if eventID == "" {
+				var err error
+				from, to, _, err = listWindow(a.now().In(a.loc), days, false, "", a.loc)
+				if err != nil {
+					return err
+				}
+			}
 
 			service, err := a.newService(ctx, false)
 			if err != nil {
@@ -137,7 +193,7 @@ func newCancelCmd(a *app) *cobra.Command {
 				return a.cancelByID(ctx, w, service, eventID, yes)
 			}
 
-			events, err := service.ListMyEvents(ctx, days, true)
+			events, err := service.ListEvents(ctx, from, to, true)
 			if err != nil {
 				return err
 			}

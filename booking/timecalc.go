@@ -36,12 +36,17 @@ type EventSummary struct {
 	EndTimestamp   int64  `json:"end_timestamp"`
 }
 
-// FormatEventList list 命令输出（与 Node 版格式一致，不含行尾空格）。
-func FormatEventList(events []EventSummary, days int) string {
-	if len(events) == 0 {
-		return fmt.Sprintf("未来 %d 天内没有日历事件\n", days)
+// FormatEventList list 命令输出（不含行尾空格）。scope 为范围描述
+// （如「未来 7 天内」「2026-07-20 当天」），mineOnly 为 true 时注明仅你组织的。
+func FormatEventList(events []EventSummary, scope string, mineOnly bool) string {
+	kind, of := "日历事件", "的"
+	if mineOnly {
+		kind, of = "你组织的日历事件", ""
 	}
-	header := fmt.Sprintf("\n未来 %d 天的日历事件（共 %d 个）:", days, len(events))
+	if len(events) == 0 {
+		return fmt.Sprintf("%s没有%s\n", scope, kind)
+	}
+	header := fmt.Sprintf("\n%s%s%s（共 %d 个）:", scope, of, kind, len(events))
 	return formatEvents(header, events)
 }
 

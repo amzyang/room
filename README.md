@@ -23,7 +23,7 @@ go build -o room .
 ```bash
 room auto            # 按 TASK_FORMAT 自动预订（--dryrun 演练）
 room book [input]    # 智能预订：自然语言（需 OPENAI_API_KEY）或 -d/-t/--title/-p 参数
-room list [-d 31]    # 列出未来 N 天的日历事件
+room list [-d 31]    # 列出日历事件（--date 查单日、--mine 仅你组织的）
 room cancel          # 取消事件：交互式选择，或 --event-id <id> --yes 直接指定
 room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code）
 room login           # OAuth 设备码流程授权用户身份（--no-wait/--device-code 两段式）

@@ -48,6 +48,7 @@ func newConfigCmd(a *app) *cobra.Command {
 		newConfigUnsetCmd(a),
 		newConfigPathCmd(a),
 		newConfigTasksCmd(a),
+		newConfigEditCmd(a),
 	)
 	return cmd
 }

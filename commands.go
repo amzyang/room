@@ -38,6 +38,8 @@ type app struct {
 	tokenStore userTokenStore
 	// tokenRevoker logout 远端撤销缝隙；nil 时按应用凭证构造真实 OAuthClient。
 	tokenRevoker feishu.TokenRevoker
+	// runEditor config edit 的编辑器执行缝隙；nil 时真实 exec 并接管终端。
+	runEditor func(editor, path string) error
 }
 
 func newRootCmd(cfg *config.Resolved) (*cobra.Command, *app) {

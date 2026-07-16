@@ -115,6 +115,7 @@ room config set booking.room_level_id # 省略 VALUE：拉取飞书会议室层�
 room config tasks                     # 交互式管理自动预订任务（booking.task_format，免手写 DSL）
 room config get EMAIL_DOMAIN          # 打印生效值（--source 附加来源）
 room config unset booking.room_size   # 从全局配置删除
+room config edit                      # 用 $VISUAL/$EDITOR 直接编辑（保存后自动校验告警）
 room config path                      # 打印全局配置文件路径
 # 以上子命令均支持 --json 信封输出
 ```

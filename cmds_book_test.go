@@ -27,9 +27,12 @@ type fakeBookingSvc struct {
 	autoResults []booking.BookResult
 	autoErr     error
 
+	cancelErrs map[string]error // 批量取消测试：按事件ID定制失败
+
 	gotDate, gotStart, gotEnd, gotTitle string
 	gotParticipants                     []string
 	gotCancelID                         string
+	gotCancelIDs                        []string
 	gotAutoDryRun                       bool
 	gotFrom, gotTo                      time.Time
 	gotMine                             bool
@@ -47,6 +50,10 @@ func (f *fakeBookingSvc) ListEvents(_ context.Context, from, to time.Time, organ
 
 func (f *fakeBookingSvc) CancelEvent(_ context.Context, eventID string) (*booking.CancelOutcome, error) {
 	f.gotCancelID = eventID
+	f.gotCancelIDs = append(f.gotCancelIDs, eventID)
+	if err, ok := f.cancelErrs[eventID]; ok {
+		return nil, err
+	}
 	return f.outcome, f.cancelErr
 }
 

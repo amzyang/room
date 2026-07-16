@@ -146,36 +146,41 @@ func newListCmd(a *app) *cobra.Command {
 
 func newCancelCmd(a *app) *cobra.Command {
 	var days int
-	var eventID string
+	var eventIDs []string
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "cancel",
-		Short: "取消日历事件（交互式选择，或 --event-id 直接指定）",
+		Short: "取消日历事件（交互式选择，或 --event-id 直接指定，可重复传参批量取消）",
 		Long: `两种模式：
   交互模式：room cancel 列出你组织的事件，输入编号并确认取消（仅终端环境）
   直接模式：room cancel --event-id <id> --yes（agent/脚本；ID 用 room list --json 获取）
 
+--event-id 可重复传参批量取消：单条失败不中断，results[].status 区分
+cancelled / already_cancelled / failed，整体 exit 0（对齐 auto 批量语义）。
+单个 --event-id 时输出契约不变，取消失败按原语义报错。
+
 幂等：事件已被取消/删除时同样成功返回（--json 时 status=already_cancelled），exit 0。
 非交互环境：缺 --event-id 报 exit 2；有 --event-id 但缺 --yes 报 exit 10（confirmation_required）。`,
 		Example: `  room cancel
-  room cancel --event-id <event_id> --yes --json`,
+  room cancel --event-id <event_id> --yes --json
+  room cancel --event-id <id1> --event-id <id2> --yes --json`,
 		Args: validationArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			w := cmd.OutOrStdout()
 
 			// fail-fast 守卫在任何网络请求之前
-			if eventID == "" && !a.interactive() {
+			if len(eventIDs) == 0 && !a.interactive() {
 				return output.Errf(output.TypeValidation,
 					"运行 room cancel --event-id <id> --yes；事件ID用 room list --json 获取",
 					"非交互环境需要 --event-id 指定要取消的事件")
 			}
-			if eventID != "" && !yes && !a.interactive() {
+			if len(eventIDs) > 0 && !yes && !a.interactive() {
 				return output.Errf(output.TypeConfirmationRequired, "加 --yes 确认取消",
-					"取消事件 %s 需要显式确认", eventID)
+					"取消事件 %s 需要显式确认", strings.Join(eventIDs, ", "))
 			}
 			var from, to time.Time
-			if eventID == "" {
+			if len(eventIDs) == 0 {
 				var err error
 				from, to, _, err = listWindow(a.now().In(a.loc), days, false, "", a.loc)
 				if err != nil {
@@ -189,8 +194,11 @@ func newCancelCmd(a *app) *cobra.Command {
 			}
 
 			// 直接指定模式：agent/脚本用，无需列表选择
-			if eventID != "" {
-				return a.cancelByID(ctx, w, service, eventID, yes)
+			if len(eventIDs) == 1 {
+				return a.cancelByID(ctx, w, service, eventIDs[0], yes)
+			}
+			if len(eventIDs) > 1 {
+				return a.cancelBatch(ctx, w, service, eventIDs, yes)
 			}
 
 			events, err := service.ListEvents(ctx, from, to, true)
@@ -235,9 +243,62 @@ func newCancelCmd(a *app) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVarP(&days, "days", "d", defaultCancelDays, "显示未来几天的事件")
-	cmd.Flags().StringVar(&eventID, "event-id", "", "直接指定要取消的事件ID（room list --json 可获取）")
+	cmd.Flags().StringArrayVar(&eventIDs, "event-id", nil, "要取消的事件ID，可重复传参批量取消（room list --json 可获取）")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "跳过确认（--event-id 模式下非交互环境必须）")
 	return cmd
+}
+
+// cancelResultItem cancel 批量模式的单条结果。
+type cancelResultItem struct {
+	EventID string `json:"event_id"`
+	Status  string `json:"status"` // cancelled / already_cancelled / failed
+	Error   string `json:"error,omitempty"`
+}
+
+// cancelBatch 批量取消：单条失败不中断，results[].status 区分结果，
+// 整体 exit 0（对齐 auto 的批量语义；单个 --event-id 走 cancelByID 保持原契约）。
+func (a *app) cancelBatch(ctx context.Context, w io.Writer, service bookingService, eventIDs []string, yes bool) error {
+	if !yes {
+		p := a.newPrompter()
+		fmt.Fprintln(w, "将取消以下事件：")
+		for _, id := range eventIDs {
+			fmt.Fprintf(w, "  - %s\n", id)
+		}
+		confirm := strings.ToLower(p.question(fmt.Sprintf("\n确认取消这 %d 个事件吗？(y/N): ", len(eventIDs))))
+		if confirm != "y" && confirm != "yes" {
+			fmt.Fprintln(w, "已取消操作")
+			return nil
+		}
+	}
+	results := make([]cancelResultItem, 0, len(eventIDs))
+	for _, id := range eventIDs {
+		item := cancelResultItem{EventID: id, Status: "cancelled"}
+		outcome, err := service.CancelEvent(ctx, id)
+		switch {
+		case err != nil:
+			item.Status = "failed"
+			item.Error = err.Error()
+		case outcome.AlreadyCancelled:
+			item.Status = "already_cancelled"
+		}
+		results = append(results, item)
+	}
+	if a.jsonOut {
+		return output.WriteSuccess(w, struct {
+			Results []cancelResultItem `json:"results"`
+		}{results}, &output.Meta{Count: len(results)})
+	}
+	for _, r := range results {
+		switch r.Status {
+		case "failed":
+			fmt.Fprintf(w, "❌ %s 取消失败: %s\n", r.EventID, r.Error)
+		case "already_cancelled":
+			fmt.Fprintf(w, "✅ %s 该事件已被取消\n", r.EventID)
+		default:
+			fmt.Fprintf(w, "✅ %s 事件已成功取消\n", r.EventID)
+		}
+	}
+	return nil
 }
 
 // cancelByID --event-id 直接取消：无 --yes 时交互环境二次确认（非交互已在守卫处拦下）。

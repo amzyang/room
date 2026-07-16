@@ -873,8 +873,18 @@ var (
 	shortDateRegex  = regexp.MustCompile(`^\d{1,2}-\d{1,2}$`)
 )
 
+// expandParticipants 展开 -p 的每个值（值内空格分隔多个），兼容 -p "alice bob" 旧用法。
+func expandParticipants(vals []string) []string {
+	var out []string
+	for _, v := range vals {
+		out = append(out, strings.Fields(v)...)
+	}
+	return out
+}
+
 func newBookCmd(a *app) *cobra.Command {
-	var date, timeRange, participants, titleFlag string
+	var date, timeRange, titleFlag string
+	var participants []string
 	var yes bool
 
 	cmd := &cobra.Command{
@@ -939,7 +949,7 @@ func newBookCmd(a *app) *cobra.Command {
 					endTime = parsed.EndTime
 					title = parsed.Title
 					if len(parsed.Participants) > 0 {
-						participants = strings.Join(parsed.Participants, " ")
+						participants = parsed.Participants
 					}
 				}
 			}
@@ -1030,8 +1040,10 @@ func newBookCmd(a *app) *cobra.Command {
 				a.log.Info(fmt.Sprintf("已将会议日期调整为: %s", dateToBook))
 			}
 
-			if participants == "" && !yes {
-				participants = p.questionOptional("请输入参与者列表（邮箱前缀或群ID），用空格分隔 (可选，直接回车跳过): ")
+			if len(participants) == 0 && !yes {
+				if v := p.questionOptional("请输入参与者列表（邮箱前缀或群ID），用空格分隔 (可选，直接回车跳过): "); v != "" {
+					participants = []string{v}
+				}
 			}
 
 			// 标题优先级：--title > 自然语言解析 > 交互问答/默认值
@@ -1056,7 +1068,7 @@ func newBookCmd(a *app) *cobra.Command {
 				return err
 			}
 
-			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, strings.Fields(participants))
+			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, expandParticipants(participants))
 			if err != nil {
 				return err
 			}
@@ -1066,7 +1078,7 @@ func newBookCmd(a *app) *cobra.Command {
 
 	cmd.Flags().StringVarP(&date, "date", "d", "", "会议日期 (MM-DD or YYYY-MM-DD)")
 	cmd.Flags().StringVarP(&timeRange, "time", "t", "", "会议时间范围 (HH:MM-HH:MM or HH:MM:SS-HH:MM:SS)")
-	cmd.Flags().StringVarP(&participants, "participants", "p", "", "参与者列表，用空格分隔")
+	cmd.Flags().StringArrayVarP(&participants, "participants", "p", nil, "参与者（可重复传参；单个值内也可用空格分隔多个）")
 	cmd.Flags().StringVar(&titleFlag, "title", "", "会议标题（优先于自然语言解析结果）")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "跳过参会人、标题等可选交互，使用默认值")
 	return cmd

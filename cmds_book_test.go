@@ -247,6 +247,26 @@ func TestBookNonInteractiveDefaultsWithoutYes(t *testing.T) {
 	}
 }
 
+func TestBookRepeatableParticipantsFlag(t *testing.T) {
+	// -p 可重复传参，与单值内空格分隔混用等价
+	svc := &fakeBookingSvc{result: bookedResult()}
+	a := newAgentTestApp(t, svc, "")
+	_, err := execAppCmd(t, a, newBookCmd,
+		"-d", "07-15", "-t", "14:00-15:00", "-p", "alice bob", "-p", "carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"alice", "bob", "carol"}
+	if len(svc.gotParticipants) != len(want) {
+		t.Fatalf("participants = %v, want %v", svc.gotParticipants, want)
+	}
+	for i, w := range want {
+		if svc.gotParticipants[i] != w {
+			t.Errorf("participants[%d] = %q, want %q", i, svc.gotParticipants[i], w)
+		}
+	}
+}
+
 func TestBookUnexpectedStatusIsInternal(t *testing.T) {
 	// BookRoom 契约外的状态（如 planned/failed 或未来新增值）不能误报成 no_room
 	svc := &fakeBookingSvc{result: &booking.BookResult{

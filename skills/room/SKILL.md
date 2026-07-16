@@ -3,9 +3,10 @@ name: room
 description: >-
   用 room CLI（飞书会议室预订工具）预订、查询、取消会议室，管理凭证与配置。
   当用户要求订会议室、约会议、查会议室日程、取消会议/日程、初始化飞书应用凭证、
-  用户授权登录、配置周期性自动订会（TASK_FORMAT），或提到 room book / list /
-  cancel / init / login / auto / notify 任一命令时，务必使用本 skill——即使用户
-  没有明确说出「room」这个工具名，只要意图是操作飞书会议室或其预订配置就适用。
+  用户授权登录、查看登录身份、退出登录、配置周期性自动订会（TASK_FORMAT），
+  或提到 room book / list / cancel / init / login / whoami / logout / auto /
+  notify 任一命令时，务必使用本 skill——即使用户没有明确说出「room」这个工具名，
+  只要意图是操作飞书会议室或其预订配置就适用。
 metadata:
   requires:
     bins: ["room"]
@@ -50,11 +51,16 @@ room config list --json                        # 查看全部配置与来源（s
 room config get feishu.app_id --json           # 单项明文值（供脚本）
 room config set booking.email_domain corp.com --json
 room config set booking.task_format "<DSL>" --json # auto 任务，语法见 README；人类用户可用 room config tasks 交互编辑
+room config tasks --json                       # 解析后的自动预订任务列表（data.raw 为原始 DSL）
+room whoami --json                             # 登录身份与凭证有效期；未登录/过期 exit 3（type=auth）
+room logout --json                             # 撤销并删除用户凭证；未登录也 exit 0（幂等）
 room list -d 7 --json                          # data.events[].event_id 供 cancel 用
-room book -d 07-15 -t 14:00-15:00 --title 周会 -p "alice bob" --json
+room list --date 07-20 --mine --json           # 查指定单日 / 仅你组织的（--date 与 -d 互斥）
+room book -d 07-15 -t 14:00-15:00 --title 周会 -p alice -p bob --json  # -p 可重复，单值内空格分隔也行
 room cancel --event-id <event_id> --yes --json # 幂等：已删除也 exit 0
+room cancel --event-id <id1> --event-id <id2> --yes --json # 批量：整体 exit 0，逐条看 data.results[].status
 room auto --dryrun --json                      # 演练（不真订）；不加 --dryrun 即真实批量预订
-room notify "文本" --json
+room notify "文本" --json                      # 空消息 exit 2；验证 webhook 链路用 room notify --test
 ```
 
 `ROOM_CONFIG=<path>` 可隔离配置文件（测试/多环境用）。
@@ -73,6 +79,10 @@ room notify "文本" --json
    `room login --no-wait --json` → 同样两段式，用 `data.device_code` 运行
    `room login --device-code <device_code> --json`。成功信封带 `user_id`/`name`。
 4. 必填项：`room config set booking.room_list <逗号分隔会议室名>`。
+
+之后任何时候都可用 `room whoami --json` 校验登录态（纯本地读取，不发网络请求）：
+exit 0 即已登录（`data` 含身份与各级有效期），exit 3 需引导用户重新 `room login`。
+预订动作前先 whoami 一次，可把认证问题在真正下单前暴露出来。
 
 两段式适合 agent：第一段立即返回不阻塞，用户授权后第二段恢复。若你能长时间等待，
 也可直接跑阻塞模式（`room init --json` / `room login --json`），授权完成前进程不退出。
@@ -100,11 +110,16 @@ room book -d 07-15 -t 14:00-15:00 --title 架构评审 -p "alice bob" --json
 ### 取消会议
 
 ```bash
-room list --json                                # 先拿 event_id
+room list --json                                # 先拿 event_id（--mine 只列你组织的，即可取消集）
 room cancel --event-id <event_id> --yes --json  # data.status: cancelled | already_cancelled
 ```
 
 `already_cancelled` 也是成功（幂等），不要当作失败重试。
+
+批量取消：`--event-id` 可重复传参。多个 ID 时切换为批量语义（对齐 auto）：
+单条失败不中断后续，整体 exit 0，逐条结果看 `data.results[].status`
+（cancelled / already_cancelled / failed，failed 附 `error` 信息）。
+单个 `--event-id` 时输出契约与上面一致（`data.status`），取消失败按原语义报错。
 
 ## 好/坏示例
 
@@ -136,5 +151,9 @@ room book -d 07-15 -t 14:00-15:00 --dryrun --json
 - 全局 `--dryrun` 仅 auto 支持，其余命令传入直接 exit 2（绝不静默真实执行）。
 - 自然语言输入（`room book "明天下午3点 周会"`）依赖 `nlp.api_key` 配置且解析
   可能失败；agent 优先用显式 `-d/-t/--title`，把自然语言解析留给你自己完成。
+- `room notify` 空消息 exit 2（不会静默发默认文案）；验证 webhook 链路用
+  `room notify --test`（与消息文本互斥）。
+- `room whoami` 是纯本地检查，token 是否仍被服务端认可以实际调用为准；
+  `room logout` 会尽力撤销远端授权（`data.remote_revoked`）并删除本地凭证。
 - secret 值只有 `room config get` 输出明文，不要把它回显给用户或写入日志。
 - 周期性订会配置（TASK_FORMAT DSL）见 [references/task-format.md](references/task-format.md)。

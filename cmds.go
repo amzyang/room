@@ -687,27 +687,43 @@ func emitLoginOK(w io.Writer, token *feishu.StoredUserToken, asJSON bool) error 
 	return nil
 }
 
+const notifyTestMessage = "来自 room 的测试消息"
+
 func newNotifyCmd(a *app) *cobra.Command {
-	return &cobra.Command{
+	var test bool
+	cmd := &cobra.Command{
 		Use:   "notify [text]",
 		Short: "通过配置的飞书自定义机器人 webhook 发送文本消息（无需应用权限/机器人能力）",
+		Long: `发送文本消息到 notify.webhook 配置的自定义机器人。
+
+消息文本必填；验证 webhook 链路用 --test 发送固定测试消息（与消息文本互斥）。`,
 		Example: `  room notify "会议室已预订：3F-A 14:00-15:00"
+  room notify --test           # 验证 webhook 链路
   room notify "构建完成" --json`,
 		Args: validationArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			message := ""
+			if len(args) > 0 {
+				message = strings.TrimSpace(args[0])
+			}
+			// 空消息静默发测试文案是脚本陷阱（notify "$MSG" 变量意外为空即误发），
+			// 测试消息必须显式 --test
+			switch {
+			case test && message != "":
+				return output.Errf(output.TypeValidation,
+					"--test 与消息文本互斥，二选一", "--test 不接受消息文本参数")
+			case test:
+				message = notifyTestMessage
+			case message == "":
+				return output.Errf(output.TypeValidation,
+					"提供消息文本，或用 room notify --test 发送测试消息", "缺少消息文本")
+			}
+
 			url := env("FEISHU_BOT_WEBHOOK")
 			if url == "" {
 				return output.Errf(output.TypeConfig,
 					"运行 room config set notify.webhook <地址> 设置自定义机器人 webhook",
 					"缺失 FEISHU_BOT_WEBHOOK 配置")
-			}
-
-			message := ""
-			if len(args) > 0 {
-				message = strings.TrimSpace(args[0])
-			}
-			if message == "" {
-				message = "来自 room 的测试消息"
 			}
 
 			client := &feishu.WebhookClient{
@@ -730,6 +746,8 @@ func newNotifyCmd(a *app) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&test, "test", false, "发送固定测试消息验证 webhook 链路（与消息文本互斥）")
+	return cmd
 }
 
 var (

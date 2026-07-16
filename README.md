@@ -27,7 +27,7 @@ room list [-d 31]    # 列出未来 N 天的日历事件
 room cancel          # 取消事件：交互式选择，或 --event-id <id> --yes 直接指定
 room init            # 一键自动创建飞书个人应用并写入全局配置（--force/--no-wait/--device-code）
 room login           # OAuth 设备码流程授权用户身份（--no-wait/--device-code 两段式）
-room notify [text]   # 通过自定义机器人 webhook 发送文本消息
+room notify [text]   # 通过自定义机器人 webhook 发送文本消息（--test 发送测试消息）
 ```
 
 全局标志：`--dryrun` 演练模式（仅 auto 支持，其余命令传入直接报错，绝不静默真实执行）、
@@ -68,6 +68,10 @@ room cancel --event-id <event_id> --yes --json
 > **Breaking**：全局 `--run` 已移除。`room auto` 默认即真实批量预订，
 > 演练改为 `room auto --dryrun`；沿用旧 `--run` 的脚本/cron 会以 exit 2 报错，
 > 去掉该 flag 即可。
+>
+> **Breaking**：`room notify` 空消息不再静默发送测试文案，改报 exit 2
+> （脚本里 `notify "$MSG"` 变量意外为空时不再误发）；验证链路改用
+> `room notify --test`。
 
 ## 配置
 

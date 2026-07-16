@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
 
 	"github.com/amzyang/room/config"
@@ -28,6 +29,9 @@ type app struct {
 
 	// newService book/list/cancel 的服务构造缝隙，测试替换为 fake。
 	newService func(ctx context.Context, dryRun bool) (bookingService, error)
+
+	// sentryTransport sentry 自检命令的发送缝隙：测试注入 fake；nil 时 SDK 用默认 HTTPTransport。
+	sentryTransport sentry.Transport
 }
 
 func newRootCmd(cfg *config.Resolved) (*cobra.Command, *app) {
@@ -121,6 +125,7 @@ Agent/脚本快速上手（全程非交互）：
 		newInitCmd(a),
 		newLoginCmd(a),
 		newNotifyCmd(a),
+		newSentryCmd(a),
 	)
 	return root, a
 }

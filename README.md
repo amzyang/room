@@ -150,7 +150,8 @@ room config path                      # 打印全局配置文件路径
 | `ROOM_LIST` | 会议室优先级列表（逗号分隔） |
 
 常用可选项：`ROOM_LEVEL_ID`（按楼层层级查找）、`ROOM_EXCLUDE_LIST`、`ROOM_SIZE`、
-`TASK_FORMAT`（auto 命令的任务 DSL）、`EMAIL_DOMAIN`（参与者邮箱域）、
+`TASK_FORMAT`（auto 命令的任务 DSL）、`EMAIL_DOMAIN`（参与者邮箱域；
+参与者传完整邮箱时不需要）、
 `TIANAPI_KEY`（节假日过滤）、`SENTRY_DSN`（错误上报）、`OPENAI_API_KEY`（NLP）。
 全部变量名与说明可用 `room config list` 查看。
 
@@ -171,7 +172,8 @@ dayOfWeek,startTime-endTime,frequency[:interval[:startDate]],participants,title
 - `frequency`：`weekly` / `daily` / `monthly`；`weekly:2` 表示隔周；
   `weekly:2:2025-04-21` 以 2025-04-21 为周期锚点——间隔大于 1 时必须带锚点，
   否则间隔不生效
-- `participants`：`:` 分隔；邮箱前缀自动补 `@EMAIL_DOMAIN`，`oc_` 前缀视为群聊 ID
+- `participants`：`:` 分隔；邮箱前缀自动补 `@EMAIL_DOMAIN`，含 `@` 视为完整邮箱，
+  `oc_` 前缀视为群聊 ID
 - 多任务用 `|` 分隔；标题与参与者不能含半角逗号或竖线（DSL 无转义）
 
 ```

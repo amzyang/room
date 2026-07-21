@@ -25,6 +25,9 @@ type fakeAPI struct {
 
 	currentUser   *feishu.UserIdentity
 	noCurrentUser bool // 模拟未登录：newTestService 不注入默认身份
+
+	foundUsers []feishu.User // FindUsersByEmails 的返回值
+	findEmails []string      // FindUsersByEmails 收到的邮箱
 }
 
 func (f *fakeAPI) VerifyCredentials(context.Context) error { return nil }
@@ -48,8 +51,9 @@ func (f *fakeAPI) DeleteCalendarEvent(_ context.Context, _ string) error { retur
 func (f *fakeAPI) GetRoomFreeBusy(context.Context, string, time.Time, time.Time) (bool, error) {
 	return f.freeBusy, nil
 }
-func (f *fakeAPI) FindUsersByEmails(context.Context, []string) ([]feishu.User, error) {
-	return nil, nil
+func (f *fakeAPI) FindUsersByEmails(_ context.Context, emails []string) ([]feishu.User, error) {
+	f.findEmails = append(f.findEmails, emails...)
+	return f.foundUsers, nil
 }
 func (f *fakeAPI) BookRoomWithEvent(_ context.Context, _ feishu.Event, roomID string, userIDs []string) (string, error) {
 	f.bookCalls++
@@ -359,5 +363,68 @@ func TestCancelEventError(t *testing.T) {
 	s := newTestService(t, &fakeAPI{deleteErr: errors.New("boom")})
 	if _, err := s.CancelEvent(context.Background(), "evt_1"); err == nil {
 		t.Error("非幂等错误应向上传递")
+	}
+}
+
+func TestResolveParticipantFullEmail(t *testing.T) {
+	api := &fakeAPI{foundUsers: []feishu.User{{ID: "u_alice", Name: "Alice", Email: "alice@gaotu.cn"}}}
+	s := newTestService(t, api)
+	// EmailDomain 故意留空：完整邮箱不依赖该配置
+
+	if got := s.resolveParticipantID(context.Background(), "alice@gaotu.cn"); got != "u_alice" {
+		t.Fatalf("resolveParticipantID = %q, want u_alice", got)
+	}
+	if len(api.findEmails) != 1 || api.findEmails[0] != "alice@gaotu.cn" {
+		t.Errorf("FindUsersByEmails 收到 %v, want [alice@gaotu.cn]", api.findEmails)
+	}
+	if s.UserIDs.Get("alice@gaotu.cn") != "u_alice" {
+		t.Error("完整邮箱应写入用户ID缓存")
+	}
+}
+
+func TestResolveParticipantPrefixWithDomain(t *testing.T) {
+	api := &fakeAPI{foundUsers: []feishu.User{{ID: "u_bob", Name: "Bob"}}}
+	s := newTestService(t, api)
+	s.Cfg.EmailDomain = "gaotu.cn"
+
+	if got := s.resolveParticipantID(context.Background(), "bob"); got != "u_bob" {
+		t.Fatalf("resolveParticipantID = %q, want u_bob", got)
+	}
+	if len(api.findEmails) != 1 || api.findEmails[0] != "bob@gaotu.cn" {
+		t.Errorf("FindUsersByEmails 收到 %v, want [bob@gaotu.cn]", api.findEmails)
+	}
+}
+
+func TestResolveParticipantPrefixNeedsDomain(t *testing.T) {
+	api := &fakeAPI{foundUsers: []feishu.User{{ID: "u_alice"}}}
+	s := newTestService(t, api)
+
+	if got := s.resolveParticipantID(context.Background(), "alice"); got != "" {
+		t.Fatalf("未配置 EMAIL_DOMAIN 时前缀应解析失败, got %q", got)
+	}
+	if len(api.findEmails) != 0 {
+		t.Errorf("不应发起邮箱查询: %v", api.findEmails)
+	}
+}
+
+func TestResolveParticipantRejectsFeishuIDs(t *testing.T) {
+	api := &fakeAPI{foundUsers: []feishu.User{{ID: "u_x"}}}
+	s := newTestService(t, api)
+	s.Cfg.EmailDomain = "gaotu.cn"
+
+	for _, p := range []string{"ou_abc123", "on_abc123"} {
+		if got := s.resolveParticipantID(context.Background(), p); got != "" {
+			t.Errorf("%s 应被拒绝, got %q", p, got)
+		}
+	}
+	if len(api.findEmails) != 0 {
+		t.Errorf("ID 前缀不应发起邮箱查询: %v", api.findEmails)
+	}
+}
+
+func TestResolveParticipantChatGroupPassthrough(t *testing.T) {
+	s := newTestService(t, &fakeAPI{})
+	if got := s.resolveParticipantID(context.Background(), "oc_group1"); got != "oc_group1" {
+		t.Fatalf("oc_ 群组应原样透传, got %q", got)
 	}
 }

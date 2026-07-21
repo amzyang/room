@@ -1078,7 +1078,7 @@ func newBookCmd(a *app) *cobra.Command {
 
 	cmd.Flags().StringVarP(&date, "date", "d", "", "会议日期 (MM-DD or YYYY-MM-DD)")
 	cmd.Flags().StringVarP(&timeRange, "time", "t", "", "会议时间范围 (HH:MM-HH:MM or HH:MM:SS-HH:MM:SS)")
-	cmd.Flags().StringArrayVarP(&participants, "participants", "p", nil, "参与者（可重复传参；单个值内也可用空格分隔多个）")
+	cmd.Flags().StringArrayVarP(&participants, "participants", "p", nil, "参与者：邮箱前缀、完整邮箱或 oc_ 群聊 ID（可重复传参；单个值内也可用空格分隔多个）")
 	cmd.Flags().StringVar(&titleFlag, "title", "", "会议标题（优先于自然语言解析结果）")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "跳过参会人、标题等可选交互，使用默认值")
 	return cmd

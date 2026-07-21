@@ -16,7 +16,8 @@ dayOfWeek,startTime-endTime,frequency[:interval[:startDate]],participants,title
 - `startTime-endTime`：`HH:MM:SS-HH:MM:SS`
 - `frequency`：`weekly` / `daily` / `monthly`；`weekly:2` 表示隔周；
   `weekly:2:2025-04-21` 以 2025-04-21 为周期锚点
-- `participants`：`:` 分隔；邮箱前缀自动补 `@EMAIL_DOMAIN`，`oc_` 前缀视为群聊 ID
+- `participants`：`:` 分隔；邮箱前缀自动补 `@EMAIL_DOMAIN`，含 `@` 视为完整邮箱，
+  `oc_` 前缀视为群聊 ID
 - 多任务用 `|` 分隔
 
 ## 示例

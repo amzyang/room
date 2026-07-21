@@ -18,6 +18,8 @@ import (
 const (
 	defaultMaxBookingDays = 15
 	chatGroupPrefix       = "oc_"
+	openIDPrefix          = "ou_"
+	unionIDPrefix         = "on_"
 	tianAPIURL            = "https://apis.tianapi.com/jiejiari/index"
 )
 
@@ -378,17 +380,25 @@ func (s *Service) resolveParticipantID(ctx context.Context, participant string) 
 		return participant
 	}
 
+	// open_id 是应用内唯一（其他应用如 lark-cli 给出的 ou_ 在本应用无效），union_id 暂无输入来源。
+	if strings.HasPrefix(participant, openIDPrefix) || strings.HasPrefix(participant, unionIDPrefix) {
+		s.Log.Error(fmt.Sprintf("不支持 open_id/union_id（跨应用不通用），请改用企业邮箱: %s", participant))
+		return ""
+	}
+
 	if cached := s.UserIDs.Get(participant); cached != "" {
 		s.Log.Debug(fmt.Sprintf("使用缓存的参与者ID: %s", participant))
 		return cached
 	}
 
-	if s.Cfg.EmailDomain == "" {
-		s.Log.Error(fmt.Sprintf("未配置 EMAIL_DOMAIN，无法解析参与者: %s", participant))
-		return ""
+	email := participant
+	if !strings.Contains(participant, "@") {
+		if s.Cfg.EmailDomain == "" {
+			s.Log.Error(fmt.Sprintf("未配置 EMAIL_DOMAIN，无法解析参与者: %s", participant))
+			return ""
+		}
+		email = participant + "@" + s.Cfg.EmailDomain
 	}
-
-	email := participant + "@" + s.Cfg.EmailDomain
 	users, err := s.API.FindUsersByEmails(ctx, []string{email})
 	if err != nil {
 		s.Log.Error(fmt.Sprintf("查找参与者失败: %s: %v", participant, err))
@@ -399,7 +409,7 @@ func (s *Service) resolveParticipantID(ctx context.Context, participant string) 
 		if err := s.UserIDs.Set(participant, user.ID); err != nil {
 			s.Log.Error(fmt.Sprintf("保存用户ID缓存失败: %v", err))
 		}
-		s.Log.Debug(fmt.Sprintf("通过邮箱前缀 %s 找到用户: %s (%s)", participant, user.Name, user.ID))
+		s.Log.Debug(fmt.Sprintf("通过邮箱 %s 找到用户: %s (%s)", email, user.Name, user.ID))
 		return user.ID
 	}
 

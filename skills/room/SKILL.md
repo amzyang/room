@@ -103,6 +103,10 @@ room book -d 07-15 -t 14:00-15:00 --title 架构评审 -p "alice bob" --json
   - `no_participants`：无有效参会人（未 `room login` 且 `-p` 为空或全部解析失败，
     `detail.participants_unresolved` 列出失败项）→ 让用户 `room login`，或补
     `-p` 并检查 `booking.email_domain` 配置。
+- `-p` 取值：邮箱前缀（自动补 `booking.email_domain`）、完整邮箱（含 `@`，
+  不依赖 email_domain 配置）或 `oc_` 群聊 ID。飞书 open_id（`ou_`）/
+  union_id（`on_`）跨应用不通用，会被拒绝——从 lark-cli 等外部工具搜人时，
+  取其输出的 `enterprise_email` 传给 `-p` 即可。
 - 日期只写 `MM-DD` 会自动补当年年份；时间段格式 `HH:MM-HH:MM`。
 - 解析出的时间已过时（exit 2，detail 带 `parsed_date`）：自行换未来日期重试，
   不要期望 CLI 替你改期。

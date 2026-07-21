@@ -118,6 +118,21 @@ func TestBookNonInteractiveMissingInputFailsFast(t *testing.T) {
 	}
 }
 
+func TestBookStdoutPipedFailsFastEvenWithTTYStdin(t *testing.T) {
+	// stdin 是 TTY 但 stdout 被 pipe/重定向：提示对用户不可见，
+	// 进交互问答会让管道挂起，必须视为非交互 fail-fast。
+	a := newAgentTestApp(t, &fakeBookingSvc{}, "本可被误读为交互回答的输入\n")
+	a.streams.InIsTerminal = true
+	a.streams.OutIsTerminal = false
+	_, err := execAppCmd(t, a, newBookCmd)
+	if err == nil {
+		t.Fatal("stdout 被 pipe 时应 fail-fast 而非进交互问答")
+	}
+	if got := output.ExitCode(err); got != output.ExitValidation {
+		t.Errorf("退出码 = %d, want %d", got, output.ExitValidation)
+	}
+}
+
 func TestBookNonInteractiveMissingTimeFailsFast(t *testing.T) {
 	a := newAgentTestApp(t, &fakeBookingSvc{}, "")
 	_, err := execAppCmd(t, a, newBookCmd, "-d", "07-15")

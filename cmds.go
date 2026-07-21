@@ -899,7 +899,8 @@ func newBookCmd(a *app) *cobra.Command {
 
 注意：
   - book 总是真实预订，不支持 --dryrun（传入会 exit 2，演练仅 auto 支持）
-  - --json/非终端环境必须给全 -d 与 -t，缺失立即 exit 2 而非挂起
+  - --json/非终端环境（stdin 或 stdout 任一被 pipe/重定向）必须给全 -d 与 -t，
+    缺失立即 exit 2 而非挂起
   - exit 0 ⟺ 房间订上了；未订到 exit 1，错误 type 区分：
     no_room（无可用会议室）/ conflict（时段已有日程）/ holiday_skipped（节假日跳过）
     / no_participants（无有效参会人，运行 room login 或补 -p）

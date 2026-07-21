@@ -9,10 +9,11 @@ import (
 	"github.com/amzyang/room/output"
 )
 
-// interactive 是否允许交互式提问：stdin 是 TTY 且未要求机读输出
-// （--json 是「机器在消费」的声明，即使在 pty 里也禁用交互）。
+// interactive 是否允许交互式提问：stdin 与 stdout 均为 TTY 且未要求机读输出
+// （--json 是「机器在消费」的声明，即使在 pty 里也禁用交互；
+// stdout 被 pipe/重定向时提示对用户不可见，继续读 stdin 只会让管道挂起）。
 func (a *app) interactive() bool {
-	return a.streams.InIsTerminal && !a.jsonOut
+	return a.streams.InIsTerminal && a.streams.OutIsTerminal && !a.jsonOut
 }
 
 // prompter 终端交互问答（对齐 Node 版 readline 行为）。

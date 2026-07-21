@@ -9,10 +9,11 @@ import (
 	"github.com/amzyang/room/output"
 )
 
-// interactiveConfigApp 交互终端环境的 config 测试 app（stdin 视为 TTY）。
+// interactiveConfigApp 交互终端环境的 config 测试 app（stdin/stdout 均视为 TTY）。
 func interactiveConfigApp(path string) *app {
 	a := newConfigTestApp(path, nil)
 	a.streams.InIsTerminal = true
+	a.streams.OutIsTerminal = true
 	return a
 }
 

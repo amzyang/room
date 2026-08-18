@@ -53,6 +53,45 @@ func TestUnknownSubcommandSuggests(t *testing.T) {
 	}
 }
 
+func TestUnknownFlagIsValidationWithHelpHint(t *testing.T) {
+	// agent 误用 flag 时纠正信号只有 stderr 一个通道：解析错误须归 validation
+	// （exit 2）且 hint 指向 <cmd> --help（对齐 kubectl 惯例）
+	_, _, err := execRootCmd(t, "book", "--app", "x")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --app") {
+		t.Fatalf("应返回 unknown flag 错误: %v", err)
+	}
+	e := output.Classify(err)
+	if e.Type != output.TypeValidation {
+		t.Errorf("error.type = %s, want validation", e.Type)
+	}
+	if !strings.Contains(e.Hint, "room book --help") {
+		t.Errorf("hint 应指向 room book --help: %q", e.Hint)
+	}
+	if got := output.ExitCode(err); got != output.ExitValidation {
+		t.Errorf("退出码 = %d, want %d", got, output.ExitValidation)
+	}
+}
+
+func TestJSONRequestedFallback(t *testing.T) {
+	// pflag 在首个坏 flag 处停止解析：--json 放末尾（agent 习惯）时 a.jsonOut
+	// 不生效，main 靠 jsonRequested 兜底保证错误信封仍是 JSON
+	cases := []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"book", "--badflag", "--json"}, true},
+		{[]string{"book", "-d", "07-15", "--badflag", "--json"}, true},
+		{[]string{"book", "--json=false"}, false},
+		{[]string{"book", "--", "--json"}, false}, // -- 之后是位置参数
+		{[]string{"list"}, false},
+	}
+	for _, c := range cases {
+		if got := jsonRequested(c.args); got != c.want {
+			t.Errorf("jsonRequested(%v) = %v, want %v", c.args, got, c.want)
+		}
+	}
+}
+
 func TestBareRootShowsHelp(t *testing.T) {
 	out, _, err := execRootCmd(t)
 	if err != nil {

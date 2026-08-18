@@ -30,8 +30,9 @@ room 是基于飞书开放平台的会议室预订 CLI。本 skill 描述其机�
   `{"ok":false,"error":{"type","message","hint","retryable","detail"}}`。
 - 判断成败只看**退出码与 `ok` 字段**，不要解析中文文案。`hint` 是给你的下一步
   命令式指引，可直接照做。
-- 例外：退出码为 2 且 stderr 最后一行不是 JSON 时，说明 flag 解析在 `--json`
-  生效前就失败了（用法错误），按 usage 错误处理。
+- flag 用法错误（unknown flag 等）同样走信封：`type=validation`、exit 2、
+  `hint` 指向 `<cmd> --help`；`--json` 写在任意位置（`--` 之后除外）都保证
+  错误信封生效。
 
 ## 退出码
 

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
 
 	sentry "github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/amzyang/room/config"
 	"github.com/amzyang/room/feishu"
@@ -122,7 +124,7 @@ Agent/脚本快速上手（全程非交互）：
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false, "输出机读 JSON 信封（stdout: {ok,data}，stderr: {ok,error}）并禁用交互")
 	root.PersistentFlags().String("sentry-dsn", "", "Sentry DSN（覆盖 SENTRY_DSN 环境变量；显式设空则禁用上报）")
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return output.Errf(output.TypeValidation, cmd.CommandPath()+" --help 查看用法", "%s", err)
+		return output.Wrap(output.TypeValidation, cmd.CommandPath()+" --help 查看用法", err)
 	})
 
 	root.AddCommand(
@@ -157,8 +159,21 @@ func (a *app) logLevel() slog.Level {
 func validationArgs(fn cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := fn(cmd, args); err != nil {
-			return output.Errf(output.TypeValidation, cmd.CommandPath()+" --help 查看用法", "%s", err)
+			return output.Wrap(output.TypeValidation, cmd.CommandPath()+" --help 查看用法", err)
 		}
 		return nil
 	}
+}
+
+// jsonRequested 兜底探测 args 是否要求 JSON 输出：pflag 在首个坏 flag 处停止
+// 解析，--json 位于其后（agent 习惯放末尾）时 a.jsonOut 不生效，错误信封会
+// 退化成人类文本。白名单解析忽略未知 flag、尊重 -- 终止符，与真实解析对
+// --json 的判定一致。仅供 main 在 Execute 出错后调用。
+func jsonRequested(args []string) bool {
+	fs := pflag.NewFlagSet("", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist.UnknownFlags = true
+	fs.SetOutput(io.Discard)
+	j := fs.Bool("json", false, "")
+	_ = fs.Parse(args)
+	return *j
 }

@@ -89,6 +89,19 @@ func (a *Auth) CalendarAuthOptions(ctx context.Context) ([]larkcore.RequestOptio
 	return a.calendarOptions, nil
 }
 
+// ForceRefresh 无条件刷新用户凭证并持久化（保活：滚动 refresh 窗口）。
+// 与 UserAccessToken 不同：不管 access_token 是否仍有效都刷新。
+// 失败时不改动本地凭证（refresh 一次失败不等于授权失效，保留现场可重试）。
+// 调用方需先确认本地存在 refresh 有效的凭证。
+func (a *Auth) ForceRefresh(ctx context.Context) (*StoredUserToken, error) {
+	stored := a.Store.Read()
+	result, err := a.TokenClient.RefreshUserToken(ctx, stored.RefreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("刷新用户凭证失败: %w", err)
+	}
+	return a.Persist(result, stored), nil
+}
+
 // RefreshIdentity 强制拉取当前授权用户身份并覆盖写入存储（覆盖是关键：
 // 换账号重登录时不能残留上一账号身份）。获取失败时清空身份字段并返回 error，
 // 由上层降级为警告（登录本身不失败）。
@@ -161,6 +174,14 @@ func (a *Auth) Persist(result *UserTokenResult, prev *StoredUserToken) *StoredUs
 		Scope:           result.Scope,
 	}
 	if prev != nil {
+		// refresh 响应可能不回发 refresh_token / refresh_token_expires_in（rotation 未发生时），
+		// 缺失时沿用旧值，避免刷新反而把 refresh 窗口清零。
+		if stored.RefreshToken == "" {
+			stored.RefreshToken = prev.RefreshToken
+		}
+		if result.RefreshExpiresInSec <= 0 {
+			stored.RefreshExpireAt = prev.RefreshExpireAt
+		}
 		if stored.AuthExpireAt == 0 {
 			stored.AuthExpireAt = prev.AuthExpireAt
 		}

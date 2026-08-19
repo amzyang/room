@@ -40,6 +40,8 @@ type app struct {
 	tokenStore userTokenStore
 	// tokenRevoker logout 远端撤销缝隙；nil 时按应用凭证构造真实 OAuthClient。
 	tokenRevoker feishu.TokenRevoker
+	// tokenClient keepalive 刷新缝隙；nil 时按应用凭证构造真实 OAuthClient。
+	tokenClient feishu.TokenClient
 	// runEditor config edit 的编辑器执行缝隙；nil 时真实 exec 并接管终端。
 	runEditor func(editor, path string) error
 }
@@ -137,6 +139,7 @@ Agent/脚本快速上手（全程非交互）：
 		newLoginCmd(a),
 		newLogoutCmd(a),
 		newWhoamiCmd(a),
+		newKeepaliveCmd(a),
 		newNotifyCmd(a),
 		newSentryCmd(a),
 	)

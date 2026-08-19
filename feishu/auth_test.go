@@ -271,6 +271,63 @@ func TestRefreshPreservesIdentity(t *testing.T) {
 	}
 }
 
+func TestForceRefreshRollsWindowEvenWhenAccessValid(t *testing.T) {
+	store := &memoryStore{token: validToken()} // access 仍有效，保活也要刷
+	client := &fakeTokenClient{
+		refreshResult: &UserTokenResult{
+			AccessToken: "new-access", AccessExpiresInSec: 7200,
+			RefreshToken: "new-refresh", RefreshExpiresInSec: 7 * 24 * 3600,
+		},
+	}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	stored, err := auth.ForceRefresh(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.refreshCalls != 1 {
+		t.Errorf("refreshCalls = %d, want 1", client.refreshCalls)
+	}
+	if stored.RefreshToken != "new-refresh" || store.token.RefreshToken != "new-refresh" {
+		t.Errorf("刷新结果未持久化: %+v", store.token)
+	}
+	if stored.RefreshExpireAt != nowMs+7*24*3600_000 {
+		t.Errorf("RefreshExpireAt = %d, 窗口未滚动", stored.RefreshExpireAt)
+	}
+}
+
+func TestForceRefreshFailureKeepsStore(t *testing.T) {
+	orig := validToken()
+	store := &memoryStore{token: orig}
+	client := &fakeTokenClient{refreshErr: errors.New("http 400")}
+	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+
+	if _, err := auth.ForceRefresh(context.Background()); err == nil {
+		t.Fatal("刷新失败应返回错误")
+	}
+	if store.token != orig {
+		t.Errorf("刷新失败不得改动本地凭证: %+v", store.token)
+	}
+}
+
+func TestPersistKeepsRefreshFieldsWhenResponseOmitsThem(t *testing.T) {
+	store := &memoryStore{}
+	auth := newTestAuth(AuthModeAuto, store, &fakeTokenClient{}, nowMs)
+	prev := &StoredUserToken{
+		RefreshToken:    "old-refresh",
+		RefreshExpireAt: nowMs + 86400_000,
+	}
+
+	stored := auth.Persist(&UserTokenResult{AccessToken: "new-access", AccessExpiresInSec: 7200}, prev)
+
+	if stored.RefreshToken != "old-refresh" {
+		t.Errorf("RefreshToken = %q, want old-refresh", stored.RefreshToken)
+	}
+	if stored.RefreshExpireAt != nowMs+86400_000 {
+		t.Errorf("RefreshExpireAt = %d, want %d(保留 prev)", stored.RefreshExpireAt, nowMs+86400_000)
+	}
+}
+
 func TestCalendarAuthOptions(t *testing.T) {
 	// auto + 有效用户凭证 → 用户身份（一个 option）
 	auth := newTestAuth(AuthModeAuto, &memoryStore{token: validToken()}, &fakeTokenClient{}, nowMs)

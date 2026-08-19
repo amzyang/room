@@ -198,6 +198,26 @@ TASK_FORMAT="fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,17:30:00-18
 配置与缓存均在 `~/.config/room/`（`config.toml` 与 `cache/`），
 任意工作目录均可运行。
 
+### 登录态保活（低频使用防掉线）
+
+飞书用户授权的 refresh_token 闲置约 7 天即失效，低频使用会掉登录态。
+`room keepalive` 无条件刷新一次凭证、滚动 refresh 窗口；定时运行可将
+登录态一直续到授权硬顶（首次登录起一年，到期需重新 `room login`，
+临近到期时 keepalive 会提示）。
+
+Homebrew 安装的用户直接交给 `brew services` 托管（launchd 每 2 天执行，
+日志在 `$(brew --prefix)/var/log/room-keepalive.log`）：
+
+```bash
+brew services start room
+```
+
+其他环境用 cron 等价实现：
+
+```bash
+0 9 */2 * * room keepalive >> "$HOME/booking.log" 2>&1
+```
+
 ## 开发
 
 ```bash

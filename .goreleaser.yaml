@@ -40,5 +40,13 @@ brews:
     install: |
       bin.install "room"
       generate_completions_from_executable(bin/"room", "completion")
+    # brew services start room：launchd 每 2 天跑一次 keepalive，
+    # 滚动约 7 天的 refresh 窗口，防止低频使用掉登录态。
+    service: |
+      run [opt_bin/"room", "keepalive"]
+      run_type :interval
+      interval 172800
+      log_path var/"log/room-keepalive.log"
+      error_log_path var/"log/room-keepalive.log"
     test: |
       system "#{bin}/room --version"

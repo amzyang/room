@@ -34,6 +34,22 @@ func userTokenPath() string {
 	return filepath.Join(config.CacheDir(), "feishu-user-token.json")
 }
 
+// envOAuthClient 按环境中的应用凭证构造 OAuth 客户端；缺凭证返回 nil。
+func envOAuthClient() *feishu.OAuthClient {
+	appID, appSecret := env("FEISHU_APP_ID"), env("FEISHU_APP_SECRET")
+	if appID == "" || appSecret == "" {
+		return nil
+	}
+	return &feishu.OAuthClient{HTTP: feishu.NewHTTPClient(), AppID: appID, AppSecret: appSecret}
+}
+
+// errMissingAppCreds 缺失飞书应用凭证的统一错误（login/keepalive/booking 共用）。
+func errMissingAppCreds() error {
+	return output.Errf(output.TypeConfig,
+		"运行 room init 自动创建应用，或 room config set feishu.app_id / feishu.app_secret 手动写入",
+		"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
+}
+
 // newFeishuAPI 装配飞书 API 客户端(调用方先确保凭证已配置)。
 func (a *app) newFeishuAPI(httpClient *http.Client) *feishu.API {
 	return feishu.NewAPI(feishu.Config{
@@ -55,12 +71,8 @@ type bookingService interface {
 
 // newBookingService 组装预订服务（唯一的配置校验层），并完成初始化。
 func (a *app) newBookingService(ctx context.Context, dryRun bool) (*booking.Service, error) {
-	appID := env("FEISHU_APP_ID")
-	appSecret := env("FEISHU_APP_SECRET")
-	if appID == "" || appSecret == "" {
-		return nil, output.Errf(output.TypeConfig,
-			"运行 room init 自动创建应用，或 room config set feishu.app_id / feishu.app_secret 手动写入",
-			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
+	if env("FEISHU_APP_ID") == "" || env("FEISHU_APP_SECRET") == "" {
+		return nil, errMissingAppCreds()
 	}
 	roomList := envutil.ParseEnvList(os.Getenv("ROOM_LIST"))
 	if len(roomList) == 0 {

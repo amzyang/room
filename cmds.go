@@ -678,18 +678,14 @@ func (a *app) runLogin(ctx context.Context, w io.Writer, opts loginOptions) erro
 	if err := validateResumeFlags(opts.noWait, opts.deviceCode); err != nil {
 		return err
 	}
-	appID := env("FEISHU_APP_ID")
-	appSecret := env("FEISHU_APP_SECRET")
-	if appID == "" || appSecret == "" {
-		return output.Errf(output.TypeConfig,
-			"运行 room init 自动创建应用，或 room config set feishu.app_id / feishu.app_secret 手动写入",
-			"缺失飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）")
+	oauthClient := envOAuthClient()
+	if oauthClient == nil {
+		return errMissingAppCreds()
 	}
 
-	httpClient := feishu.NewHTTPClient()
 	auth := &feishu.Auth{
 		Mode:        feishu.AuthModeAuto,
-		TokenClient: &feishu.OAuthClient{HTTP: httpClient, AppID: appID, AppSecret: appSecret},
+		TokenClient: oauthClient,
 		Store:       &feishu.FileUserTokenStore{Path: userTokenPath()},
 		Clock:       a.now,
 		Log:         a.log,

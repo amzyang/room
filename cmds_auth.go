@@ -180,9 +180,8 @@ func (a *app) loginRevoker() feishu.TokenRevoker {
 	if a.tokenRevoker != nil {
 		return a.tokenRevoker
 	}
-	appID, appSecret := env("FEISHU_APP_ID"), env("FEISHU_APP_SECRET")
-	if appID == "" || appSecret == "" {
-		return nil
+	if client := envOAuthClient(); client != nil {
+		return client
 	}
-	return &feishu.OAuthClient{HTTP: feishu.NewHTTPClient(), AppID: appID, AppSecret: appSecret}
+	return nil
 }

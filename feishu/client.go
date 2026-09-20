@@ -436,6 +436,48 @@ func (a *API) GetRoomFreeBusy(ctx context.Context, roomID string, start, end tim
 	return available, nil
 }
 
+// instanceViewMaxSpan 实例视图接口要求查询跨度小于 40 天。
+const instanceViewMaxSpan = 39 * 24 * time.Hour
+
+type timeWindow struct {
+	start, end time.Time
+}
+
+// splitWindows 把 [start, end) 切成跨度不超过 maxSpan、首尾相接的窗口。
+func splitWindows(start, end time.Time, maxSpan time.Duration) []timeWindow {
+	var windows []timeWindow
+	for start.Before(end) {
+		next := start.Add(maxSpan)
+		if next.After(end) {
+			next = end
+		}
+		windows = append(windows, timeWindow{start, next})
+		start = next
+	}
+	return windows
+}
+
+// mergeCalendarEvents 以实例视图为准（重复日程已展开为真实发生时间），
+// 再补上事件列表里的已取消/已删除事件——实例视图不返回它们。
+func mergeCalendarEvents(instances, listed []CalendarEvent) []CalendarEvent {
+	merged := make([]CalendarEvent, 0, len(instances)+len(listed))
+	seen := make(map[string]bool, len(instances))
+	for _, event := range instances {
+		if seen[event.EventID] {
+			continue
+		}
+		seen[event.EventID] = true
+		merged = append(merged, event)
+	}
+	for _, event := range listed {
+		if event.Status == "cancelled" || event.Status == "deleted" {
+			merged = append(merged, event)
+		}
+	}
+	return merged
+}
+
+// GetCalendarEvents 返回窗口内的日程实例，外加已取消/已删除的事件。
 func (a *API) GetCalendarEvents(ctx context.Context, start, end time.Time) ([]CalendarEvent, error) {
 	calendarID, err := a.GetPrimaryCalendar(ctx)
 	if err != nil {
@@ -446,6 +488,55 @@ func (a *API) GetCalendarEvents(ctx context.Context, start, end time.Time) ([]Ca
 		return nil, err
 	}
 
+	var instances []CalendarEvent
+	for _, window := range splitWindows(start, end, instanceViewMaxSpan) {
+		items, err := a.viewCalendarInstances(ctx, calendarID, window, authOpts)
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, items...)
+	}
+	listed, err := a.listCalendarEvents(ctx, calendarID, start, end, authOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	events := mergeCalendarEvents(instances, listed)
+	a.log.Debug(fmt.Sprintf("获取到 %d 个日历事件", len(events)))
+	return events, nil
+}
+
+func (a *API) viewCalendarInstances(ctx context.Context, calendarID string, window timeWindow, authOpts []larkcore.RequestOptionFunc) ([]CalendarEvent, error) {
+	req := larkcalendar.NewInstanceViewCalendarEventReqBuilder().
+		CalendarId(calendarID).
+		StartTime(strconv.FormatInt(window.start.Unix(), 10)).
+		EndTime(strconv.FormatInt(window.end.Unix(), 10)).
+		Build()
+	resp, err := a.lark.Calendar.V4.CalendarEvent.InstanceView(ctx, req, authOpts...)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.Success() {
+		return nil, &APIError{Code: resp.Code, Msg: fmt.Sprintf("获取日程实例失败: %s", resp.Msg)}
+	}
+
+	events := make([]CalendarEvent, 0, len(resp.Data.Items))
+	for _, item := range resp.Data.Items {
+		events = append(events, CalendarEvent{
+			EventID:             deref(item.EventId),
+			Summary:             deref(item.Summary),
+			Description:         deref(item.Description),
+			Status:              deref(item.Status),
+			OrganizerCalendarID: deref(item.OrganizerCalendarId),
+			StartTimestamp:      timeInfoUnix(item.StartTime),
+			EndTimestamp:        timeInfoUnix(item.EndTime),
+			LocationName:        locationName(item.Location),
+		})
+	}
+	return events, nil
+}
+
+func (a *API) listCalendarEvents(ctx context.Context, calendarID string, start, end time.Time, authOpts []larkcore.RequestOptionFunc) ([]CalendarEvent, error) {
 	const pageSize = 100
 	req := larkcalendar.NewListCalendarEventReqBuilder().
 		CalendarId(calendarID).
@@ -463,26 +554,18 @@ func (a *API) GetCalendarEvents(ctx context.Context, start, end time.Time) ([]Ca
 
 	events := make([]CalendarEvent, 0, len(resp.Data.Items))
 	for _, item := range resp.Data.Items {
-		event := CalendarEvent{
+		events = append(events, CalendarEvent{
 			EventID:             deref(item.EventId),
 			Summary:             deref(item.Summary),
 			Description:         deref(item.Description),
 			Status:              deref(item.Status),
 			OrganizerCalendarID: deref(item.OrganizerCalendarId),
-		}
-		if item.StartTime != nil && item.StartTime.Timestamp != nil {
-			event.StartTimestamp, _ = strconv.ParseInt(*item.StartTime.Timestamp, 10, 64)
-		}
-		if item.EndTime != nil && item.EndTime.Timestamp != nil {
-			event.EndTimestamp, _ = strconv.ParseInt(*item.EndTime.Timestamp, 10, 64)
-		}
-		if item.Location != nil {
-			event.LocationName = deref(item.Location.Name)
-		}
-		events = append(events, event)
+			StartTimestamp:      timeInfoUnix(item.StartTime),
+			EndTimestamp:        timeInfoUnix(item.EndTime),
+			LocationName:        locationName(item.Location),
+		})
 	}
 
-	a.log.Debug(fmt.Sprintf("获取到 %d 个日历事件", len(events)))
 	if len(events) >= pageSize {
 		a.log.Warn(fmt.Sprintf("获取的日历事件数据可能不完整，达到分页限制 %d 条，实际可能有更多数据", pageSize))
 	}
@@ -633,6 +716,21 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func timeInfoUnix(t *larkcalendar.TimeInfo) int64 {
+	if t == nil {
+		return 0
+	}
+	ts, _ := strconv.ParseInt(deref(t.Timestamp), 10, 64)
+	return ts
+}
+
+func locationName(l *larkcalendar.EventLocation) string {
+	if l == nil {
+		return ""
+	}
+	return deref(l.Name)
 }
 
 func derefInt(i *int) int {

@@ -96,9 +96,8 @@ room login   # 完成用户授权
 
 `room login` 支持同样的 `--no-wait` / `--device-code` 两段式与 `--json` 事件
 （`device_authorization` / `login_ok`）。登录成功会获取并保存当前用户身份
-（`open_id`/`user_id`/`name`），预订时自动将本人加入参会人（接替已移除的
-`booking.task_owner` 配置）；未登录且无可解析参会人的预订会以
-`no_participants` 拒绝。
+（`open_id`/`user_id`/`name`），预订时自动将本人加入参会人；本人身份不可得且
+无可解析参会人的预订会以 `no_participants` 拒绝。
 
 已有凭证时需加 `--force` 覆盖，会同时撤销旧应用的登录 token 并删除
 `~/.config/room/cache/feishu-user-token.json`，需重新 `room login`。

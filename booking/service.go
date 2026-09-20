@@ -276,7 +276,7 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 		return nil, fmt.Errorf("无效的结束时间: %w", err)
 	}
 
-	// 授权用户接替原 TASK_OWNER：有 user_id 时自动加入参会人（按 ID 去重）。
+	// 授权用户有 user_id 时自动加入参会人（按 ID 去重）。
 	// 无任何有效参会人的预订是无效预订，先于日历/会议室 API 直接放弃。
 	participantIDs, unresolved := s.resolveParticipants(ctx, participants)
 	if self := s.API.CurrentUser(ctx); self != nil && self.UserID != "" && !contains(participantIDs, self.UserID) {

@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -113,25 +112,6 @@ func TestBootstrap(t *testing.T) {
 	}
 	if src := r.OverrideOf("FEISHU_APP_ID"); src != SourceShellEnv {
 		t.Errorf("OverrideOf(FEISHU_APP_ID) = %v, want SourceShellEnv", src)
-	}
-}
-
-func TestBootstrapWarnsRemovedTaskOwner(t *testing.T) {
-	dir := t.TempDir()
-	tomlPath := filepath.Join(dir, "config.toml")
-	content := "[booking]\ntask_owner = \"alice\"\n"
-	if err := os.WriteFile(tomlPath, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	clearEnv(t, "TASK_OWNER")
-
-	r := Bootstrap(tomlPath)
-
-	if !strings.Contains(r.Warning, "task_owner") || !strings.Contains(r.Warning, "room config unset") {
-		t.Errorf("残留已移除键应产生带清理指引的告警: %q", r.Warning)
-	}
-	if _, ok := os.LookupEnv("TASK_OWNER"); ok {
-		t.Error("已移除键不应注入进程 env")
 	}
 }
 

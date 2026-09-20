@@ -336,34 +336,18 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 		Short: "从 config.toml 删除一项配置",
 		Args:  validationArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			tomlKey, envKey := "", ""
 			it, err := lookupItem(args[0])
-			switch {
-			case err == nil:
-				tomlKey, envKey = it.TOMLKey(), it.EnvKey
-			case config.RemovedTOMLKey(args[0]) != "":
-				// 已移除 schema 的键可能残留在 config.toml 的未识别项中，同样允许清理
-				tomlKey = config.RemovedTOMLKey(args[0])
-			default:
+			if err != nil {
 				return err
 			}
+			tomlKey, envKey := it.TOMLKey(), it.EnvKey
 
 			doc, err := config.ReadFile(a.cfg.Path)
 			if err != nil {
 				return fmt.Errorf("读取 %s 失败: %w", a.cfg.Path, err)
 			}
-			existed := false
-			if envKey != "" {
-				_, existed = doc.Values[envKey]
-				delete(doc.Values, envKey)
-			} else {
-				section, key, _ := strings.Cut(tomlKey, ".")
-				_, existed = doc.Extra[section][key]
-				delete(doc.Extra[section], key)
-				if len(doc.Extra[section]) == 0 {
-					delete(doc.Extra, section)
-				}
-			}
+			_, existed := doc.Values[envKey]
+			delete(doc.Values, envKey)
 			if existed {
 				if err := config.WriteFile(a.cfg.Path, doc); err != nil {
 					return err
@@ -372,7 +356,7 @@ func newConfigUnsetCmd(a *app) *cobra.Command {
 			if a.jsonOut {
 				return output.WriteSuccess(cmd.OutOrStdout(), struct {
 					Key     string `json:"key"`
-					Env     string `json:"env,omitempty"`
+					Env     string `json:"env"`
 					Path    string `json:"path"`
 					Removed bool   `json:"removed"` // false 表示本来就未设置（幂等成功）
 				}{tomlKey, envKey, a.cfg.Path, existed}, nil)

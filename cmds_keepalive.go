@@ -88,7 +88,9 @@ func (a *app) keepaliveAuth() *feishu.Auth {
 		client = oauthClient
 	}
 	return &feishu.Auth{
-		Mode: feishu.AuthModeAuto, TokenClient: client,
-		Store: a.userTokens(), Clock: a.now, Log: a.log,
+		TokenClient: client,
+		Store:       a.userTokens(),
+		Clock:       a.now,
+		Log:         a.log,
 	}
 }

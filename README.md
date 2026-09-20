@@ -81,7 +81,7 @@ room cancel --event-id <event_id> --yes --json
 
 ```bash
 room init    # 浏览器确认后自动创建 PersonalAgent 个人应用并写入凭证
-room login   # 完成用户授权
+room login   # 完成用户授权（日程读写只支持用户身份，未登录时预订类命令 exit 3）
 ```
 
 凭证写入全局 `~/.config/room/config.toml`。
@@ -182,9 +182,10 @@ TASK_FORMAT="fri,11:00:00-12:00:00,weekly,alice:bob,项目周会|mon,17:30:00-18
 ## 飞书应用权限
 
 手动建应用时，在飞书开发者后台「权限管理 → 批量导入」中导入
-[permissions.json](permissions.json)（针对应用身份 tenant 权限）。
+[permissions.json](permissions.json)：`tenant` 为应用身份权限（会议室、通讯录、
+忙闲等只读查询），`user` 为用户身份权限（日程读写）。
 `room init` 自动创建的个人应用如遇权限类报错（如 99991672），请退回手动建应用并导入权限。
-用户身份预订需先运行 `room login` 完成 OAuth 设备码授权（凭证存于
+日程读写只支持用户身份，需先运行 `room login` 完成 OAuth 设备码授权（凭证存于
 `~/.config/room/cache/feishu-user-token.json`，授权硬顶一年，到期需重新 login）。
 
 ## 定时任务部署

@@ -47,7 +47,7 @@ func TestPollDeviceLoginSuccess(t *testing.T) {
 		{Status: PollSuccess, Token: &UserTokenResult{AccessToken: "at", RefreshToken: "rt", AccessExpiresInSec: 3600}},
 	}}
 	store := &memoryStore{}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	var intervals []time.Duration
 	got, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&intervals))
@@ -82,7 +82,7 @@ func TestPollDeviceLoginFirstWriteDropsPriorIdentity(t *testing.T) {
 	}}
 	client.userInfoResult = &UserIdentity{OpenID: "ou_new", UserID: "u_new", Name: "新账号"}
 	store := &recordingStore{memoryStore: memoryStore{token: identityToken()}}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&[]time.Duration{}))
 	if err != nil {
@@ -105,7 +105,7 @@ func TestPollDeviceLoginPersistsIdentity(t *testing.T) {
 	}}
 	client.userInfoResult = &UserIdentity{OpenID: "ou_1", UserID: "u_1", Name: "张三"}
 	store := &memoryStore{}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&[]time.Duration{}))
 	if err != nil {
@@ -125,7 +125,7 @@ func TestPollDeviceLoginUserInfoFailureStillSucceeds(t *testing.T) {
 	}}
 	client.userInfoErr = errors.New("permission denied")
 	store := &memoryStore{}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&[]time.Duration{}))
 	if err != nil {
@@ -144,7 +144,7 @@ func TestPollDeviceLoginSlowDown(t *testing.T) {
 		{Status: PollSlowDown},
 		{Status: PollSuccess, Token: &UserTokenResult{AccessToken: "at"}},
 	}}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{}, client, nowMs)
+	auth := newTestAuth(&memoryStore{}, client, nowMs)
 
 	var intervals []time.Duration
 	if _, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&intervals)); err != nil {
@@ -174,7 +174,7 @@ func TestPollDeviceLoginExpired(t *testing.T) {
 func TestPollDeviceLoginPollError(t *testing.T) {
 	boom := errors.New("access_denied")
 	client := &pollScriptClient{err: boom}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{}, client, nowMs)
+	auth := newTestAuth(&memoryStore{}, client, nowMs)
 
 	if _, err := pollDeviceLogin(context.Background(), auth, "dc", 5, 300, noSleep(&[]time.Duration{})); !errors.Is(err, boom) {
 		t.Errorf("轮询错误应向上传递: %v", err)

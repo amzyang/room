@@ -77,7 +77,7 @@ room notify "文本" --json                      # 空消息 exit 2；验证 web
    `room init --device-code <device_code> --json` → 凭证写入 config.toml。
    把 device_code 作为单个命令参数传入，**不要把 `data.resume_command` 整串交给
    shell 求值**（它来自网络响应，防篡改注入）。已有凭证会 exit 10，确认后加 `--force`。
-3. 用户授权（推荐，以本人身份订，且预订时自动把本人加入参会人）：
+3. 用户授权（必需：日程读写只支持用户身份，预订时自动把本人加入参会人）：
    `room login --no-wait --json` → 同样两段式，用 `data.device_code` 运行
    `room login --device-code <device_code> --json`。成功信封带 `user_id`/`name`。
 4. 必填项：`room config set booking.room_list <逗号分隔会议室名>`。
@@ -100,11 +100,11 @@ room book -d 07-15 -t 14:00-15:00 --title 架构评审 -p "alice bob" --json
 - 失败（exit 1）按 `error.type` 处置：
   - `no_room`：该时段无可用会议室 → 换时段重试，或建议用户调整
     `booking.room_list` / `booking.room_size` / `booking.room_level_id`。
-  - `conflict`：该时段已有用户本人组织或本工具订过的日程（他人组织、把用户
+  - `conflict`：该时段已有用户本人组织的日程，或本工具订过后被取消的日程（他人组织、把用户
     拉进去的日程不算）→ `room list --mine --json` 查看后换时间。
   - `holiday_skipped`：目标日期是节假日 → 换非节假日日期。
-  - `no_participants`：无有效参会人（未 `room login` 且 `-p` 为空或全部解析失败，
-    `detail.participants_unresolved` 列出失败项）→ 让用户 `room login`，或补
+  - `no_participants`：无有效参会人（本人身份不可得且 `-p` 为空或全部解析失败，
+    `detail.participants_unresolved` 列出失败项）→ 让用户重新 `room login`，或补
     `-p` 并检查 `booking.email_domain` 配置。
 - `-p` 取值：邮箱前缀（自动补 `booking.email_domain`）、完整邮箱（含 `@`，
   不依赖 email_domain 配置）或 `oc_` 群聊 ID。飞书 open_id（`ou_`）/

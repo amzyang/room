@@ -21,7 +21,6 @@ const (
 	TypeString Type = iota
 	TypeInt
 	TypeList // env 编码逗号分隔;TOML 为字符串数组
-	TypeEnum
 )
 
 // Item 一个配置项的元数据,驱动 set 校验、TUI 表单、list 展示与 TOML 读写。
@@ -33,9 +32,8 @@ type Item struct {
 	Default   string // 规范 env 字符串形态("" = 无默认)
 	Required  bool
 	Secret    bool
-	Multiline bool     // 长值,TUI 用多行控件
-	Enum      []string // 仅 TypeEnum
-	Desc      string   // 一行描述:TOML 注释、TUI 描述、list 展示共用
+	Multiline bool   // 长值,TUI 用多行控件
+	Desc      string // 一行描述:TOML 注释、TUI 描述、list 展示共用
 }
 
 // TOMLKey 点分形式,如 feishu.app_id。
@@ -47,8 +45,6 @@ var Registry = []Item{
 		Desc: "飞书应用 ID(可运行 room init 自动创建)"},
 	{EnvKey: "FEISHU_APP_SECRET", Section: "feishu", Key: "app_secret", Type: TypeString, Required: true, Secret: true,
 		Desc: "飞书应用密钥"},
-	{EnvKey: "FEISHU_AUTH_MODE", Section: "feishu", Key: "auth_mode", Type: TypeEnum, Default: "auto", Enum: []string{"auto", "user", "tenant"},
-		Desc: "鉴权模式:auto(用户优先、应用兜底)/ user / tenant"},
 	{EnvKey: "ROOM_LIST", Section: "booking", Key: "room_list", Type: TypeList, Required: true,
 		Desc: "会议室优先级列表"},
 	{EnvKey: "ROOM_EXCLUDE_LIST", Section: "booking", Key: "room_exclude_list", Type: TypeList,
@@ -135,8 +131,8 @@ func Lookup(arg string) (Item, error) {
 	return Item{}, fmt.Errorf("未知配置项 %q(用 room config list 查看全部)", arg)
 }
 
-// Normalize 校验并规范化用户输入为 env 字符串形态(list 逗号连接、enum 小写)。
-// 空值:string 允许(显式空,如禁用 Sentry)、list 表示空列表;int/enum 拒绝(取消设置请用 unset)。
+// Normalize 校验并规范化用户输入为 env 字符串形态(list 逗号连接)。
+// 空值:string 允许(显式空,如禁用 Sentry)、list 表示空列表;int 拒绝(取消设置请用 unset)。
 func (it Item) Normalize(raw string) (string, error) {
 	v := envutil.CleanEnvValue(raw)
 	switch it.Type {
@@ -148,13 +144,6 @@ func (it Item) Normalize(raw string) (string, error) {
 			return "", fmt.Errorf("%s 需要整数值,收到 %q", it.TOMLKey(), raw)
 		}
 		return v, nil
-	case TypeEnum:
-		for _, e := range it.Enum {
-			if strings.EqualFold(v, e) {
-				return e, nil
-			}
-		}
-		return "", fmt.Errorf("%s 只接受 %s,收到 %q", it.TOMLKey(), strings.Join(it.Enum, "/"), raw)
 	case TypeList:
 		if v == "" {
 			return "", nil

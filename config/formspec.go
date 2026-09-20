@@ -15,7 +15,7 @@ const (
 	FieldSelect
 )
 
-// Option Select 控件的一个选项;enum 场景 label==value,层级场景显示路径、写入 ID。
+// Option Select 控件的一个选项:显示层级路径、写入层级 ID。
 type Option struct {
 	Label string
 	Value string
@@ -99,14 +99,6 @@ func buildField(it Item, initial string, levels []Option, taskFormatValidate fun
 	case it.EnvKey == "ROOM_LEVEL_ID" && len(levels) > 0:
 		f.Kind = FieldSelect
 		f.Options = levelOptions(levels, initial)
-	case it.Type == TypeEnum:
-		f.Kind = FieldSelect
-		for _, e := range it.Enum {
-			f.Options = append(f.Options, Option{Label: e, Value: e})
-		}
-		if initial == "" {
-			f.Initial = it.Default
-		}
 	case it.Multiline:
 		f.Kind = FieldText
 	}

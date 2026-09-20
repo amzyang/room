@@ -684,7 +684,6 @@ func (a *app) runLogin(ctx context.Context, w io.Writer, opts loginOptions) erro
 	}
 
 	auth := &feishu.Auth{
-		Mode:        feishu.AuthModeAuto,
 		TokenClient: oauthClient,
 		Store:       &feishu.FileUserTokenStore{Path: userTokenPath()},
 		Clock:       a.now,
@@ -796,7 +795,7 @@ func emitLoginOK(w io.Writer, token *feishu.StoredUserToken, asJSON bool) error 
 	if token.Name != "" {
 		who = fmt.Sprintf("（%s）", token.Name)
 	}
-	fmt.Fprintf(w, "登录成功%s，已保存用户凭证，后续预定将优先以用户身份执行\n", who)
+	fmt.Fprintf(w, "登录成功%s，已保存用户凭证，后续预定以用户身份执行\n", who)
 	return nil
 }
 

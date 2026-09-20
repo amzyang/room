@@ -1,7 +1,9 @@
 package feishu
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,5 +57,18 @@ func TestMergeCalendarEvents(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+// 应用凭据有效但无用户凭证：校验失败并指引 room login（日历操作只支持用户身份）。
+func TestVerifyCredentialsRequiresUserToken(t *testing.T) {
+	api := &API{auth: newTestAuth(&memoryStore{}, &fakeTokenClient{}, nowMs)}
+	if err := api.VerifyCredentials(context.Background()); err == nil || !strings.Contains(err.Error(), "room login") {
+		t.Errorf("err = %v, want error guiding to room login", err)
+	}
+
+	api = &API{auth: newTestAuth(&memoryStore{token: validToken()}, &fakeTokenClient{}, nowMs)}
+	if err := api.VerifyCredentials(context.Background()); err != nil {
+		t.Errorf("valid user token: err = %v", err)
 	}
 }

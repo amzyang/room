@@ -75,7 +75,7 @@ func (s *Service) Initialize(ctx context.Context) error {
 	s.AutoCache.Load()
 
 	if err := s.API.VerifyCredentials(ctx); err != nil {
-		return fmt.Errorf("飞书认证失败，请检查 App ID 和 App Secret: %w", err)
+		return fmt.Errorf("飞书认证失败: %w", err)
 	}
 	s.Log.Info("飞书服务初始化成功")
 	return nil
@@ -284,7 +284,7 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 	}
 	result.ParticipantsUnresolved = unresolved
 	if len(participantIDs) == 0 {
-		s.Log.Warn(fmt.Sprintf("无有效参会人（未登录且参会人为空或全部解析失败），放弃预订: %s %s-%s", dateStr, startTime, endTime))
+		s.Log.Warn(fmt.Sprintf("无有效参会人（本人身份不可得且参会人为空或全部解析失败），放弃预订: %s %s-%s", dateStr, startTime, endTime))
 		result.Status = StatusNoParticipants
 		return result, nil
 	}
@@ -339,8 +339,9 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 	return result, nil
 }
 
-// hasOverlapEvent 判断时段是否已被本人占用。只有本人组织或本工具预订过的日程算占用：
-// 他人组织、把本人拉进去的日程不阻止预订，会议室本身是否空闲由 findAvailableRoom 独立判定。
+// hasOverlapEvent 判断时段是否已被本人占用。只有本人组织的日程、或本工具订过后被取消的日程
+// 算占用：他人组织、把本人拉进去的日程不阻止预订，
+// 会议室本身是否空闲由 findAvailableRoom 独立判定。
 func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, myCalendarID string, start, end time.Time, dateStr, startTime, endTime string) bool {
 	for _, event := range events {
 		if event.StartTimestamp == 0 || event.EndTimestamp == 0 {
@@ -350,12 +351,9 @@ func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, myCalendarID st
 			continue
 		}
 
-		// 应用身份创建的日程 organizer 是应用日历而非本人，由 AutoCache 补认
-		autoBooked := event.EventID != "" && s.AutoCache.Has(event.EventID)
-
 		if event.Status == "cancelled" || event.Status == "deleted" {
 			// 本工具创建后被取消的会议仍视为占用，避免在被人为取消的时段反复重订
-			if !autoBooked {
+			if !s.AutoCache.Has(event.EventID) {
 				continue
 			}
 			s.Log.Info(fmt.Sprintf("发现已取消的自动预订会议，视为时间段占用: %s %s-%s eventId=%s",
@@ -363,7 +361,7 @@ func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, myCalendarID st
 			return true
 		}
 
-		if !autoBooked && !IsOrganizedBy(event.OrganizerCalendarID, myCalendarID) {
+		if !IsOrganizedBy(event.OrganizerCalendarID, myCalendarID) {
 			s.Log.Debug(fmt.Sprintf("忽略他人组织的日历事件: %s", event.Summary))
 			continue
 		}

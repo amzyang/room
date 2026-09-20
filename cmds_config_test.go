@@ -69,7 +69,6 @@ func TestConfigSetValidation(t *testing.T) {
 
 	tests := [][]string{
 		{"set", "booking.room_size", "abc"},
-		{"set", "feishu.auth_mode", "bogus"},
 		{"set", "unknown.key", "x"},
 		{"set", "booking.task_format", "wedn,10:00:00-11:00:00,weekly,,拼错的星期"},
 	}
@@ -126,7 +125,7 @@ func TestConfigList(t *testing.T) {
 		"FEISHU_APP_ID":     {Value: "cli_x", Source: config.SourceShellEnv},
 		"FEISHU_APP_SECRET": {Value: "supersecret123", Source: config.SourceTOML},
 		"TASK_FORMAT":       {Value: longFormat, Source: config.SourceTOML},
-		"FEISHU_AUTH_MODE":  {Value: "auto", Source: config.SourceDefault},
+		"ROOM_SIZE":         {Value: "0", Source: config.SourceDefault},
 	})
 
 	out, _, err := execConfigCmd(t, a, "list")

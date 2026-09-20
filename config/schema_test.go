@@ -97,10 +97,7 @@ func TestNormalize(t *testing.T) {
 	}{
 		{"ROOM_SIZE", "15", "15", false},
 		{"ROOM_SIZE", "abc", "", true},
-		{"ROOM_SIZE", "", "", true},                 // int 不允许显式空,请用 unset
-		{"FEISHU_AUTH_MODE", "USER", "user", false}, // enum 大小写不敏感,归一化为小写
-		{"FEISHU_AUTH_MODE", "bogus", "", true},
-		{"FEISHU_AUTH_MODE", "", "", true},
+		{"ROOM_SIZE", "", "", true}, // int 不允许显式空,请用 unset
 		{"ROOM_LIST", " 会议室A , 会议室B ", "会议室A,会议室B", false},
 		{"ROOM_LIST", ",,", "", true},
 		{"ROOM_LIST", "", "", false},  // 空列表允许

@@ -131,8 +131,7 @@ func TestBookRoomHolidaySkipped(t *testing.T) {
 	}
 }
 
-// 时段占用判定矩阵：本人组织、或本工具订过（应用身份创建的日程 organizer 是应用日历
-// 而非本人，靠 AutoCache 补认）的日程算占用；他人组织、把本人拉进去的不算，会议室本身
+// 时段占用判定矩阵：本人组织的日程算占用；他人组织、把本人拉进去的不算，会议室本身
 // 是否空闲由 GetRoomFreeBusy 独立判定。本工具订过、之后被人取消的时段仍算占用，
 // 避免在被人为取消的时段反复重订。
 func TestBookRoomOverlapOccupancy(t *testing.T) {
@@ -155,8 +154,8 @@ func TestBookRoomOverlapOccupancy(t *testing.T) {
 	}{
 		{"本人组织", overlap("evt_mine", "cal_me", ""), false, StatusConflict},
 		{"他人组织", overlap("evt_other", "cal_other", ""), false, StatusBooked},
-		{"应用身份代订", overlap("evt_auto", "cal_app", ""), true, StatusConflict},
-		{"代订后被取消", overlap("evt_auto", "cal_app", "cancelled"), true, StatusConflict},
+		{"本人取消", overlap("evt_mine", "cal_me", "cancelled"), false, StatusBooked},
+		{"本工具订后被取消", overlap("evt_auto", "cal_me", "cancelled"), true, StatusConflict},
 	}
 
 	for _, tt := range tests {

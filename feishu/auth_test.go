@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,9 +48,8 @@ func (f *fakeTokenClient) GetUserInfo(context.Context, string) (*UserIdentity, e
 	return f.userInfoResult, f.userInfoErr
 }
 
-func newTestAuth(mode AuthMode, store UserTokenStore, client TokenClient, nowMs int64) *Auth {
+func newTestAuth(store UserTokenStore, client TokenClient, nowMs int64) *Auth {
 	return &Auth{
-		Mode:        mode,
 		TokenClient: client,
 		Store:       store,
 		Clock:       func() time.Time { return time.UnixMilli(nowMs) },
@@ -70,7 +70,7 @@ func validToken() *StoredUserToken {
 
 func TestUserAccessTokenValid(t *testing.T) {
 	client := &fakeTokenClient{}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: validToken()}, client, nowMs)
+	auth := newTestAuth(&memoryStore{token: validToken()}, client, nowMs)
 
 	if got := auth.UserAccessToken(context.Background()); got != "valid-access" {
 		t.Errorf("got %q, want valid-access", got)
@@ -92,7 +92,7 @@ func TestUserAccessTokenRefreshAndPersist(t *testing.T) {
 			RefreshExpiresInSec: 30 * 24 * 3600,
 		},
 	}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	if got := auth.UserAccessToken(context.Background()); got != "new-access" {
 		t.Errorf("got %q, want new-access", got)
@@ -105,11 +105,11 @@ func TestUserAccessTokenRefreshAndPersist(t *testing.T) {
 	}
 }
 
-func TestUserAccessTokenRefreshFailureFallsBack(t *testing.T) {
+func TestUserAccessTokenRefreshFailureReturnsEmpty(t *testing.T) {
 	expired := validToken()
 	expired.AccessExpireAt = nowMs - 1000
 	client := &fakeTokenClient{refreshErr: errors.New("boom")}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: expired}, client, nowMs)
+	auth := newTestAuth(&memoryStore{token: expired}, client, nowMs)
 
 	if got := auth.UserAccessToken(context.Background()); got != "" {
 		t.Errorf("refresh failure should return empty, got %q", got)
@@ -121,7 +121,7 @@ func TestUserAccessTokenRefreshExpired(t *testing.T) {
 	dead.AccessExpireAt = nowMs - 1000
 	dead.RefreshExpireAt = nowMs - 1000
 	client := &fakeTokenClient{}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: dead}, client, nowMs)
+	auth := newTestAuth(&memoryStore{token: dead}, client, nowMs)
 
 	if got := auth.UserAccessToken(context.Background()); got != "" {
 		t.Errorf("dead refresh token should return empty, got %q", got)
@@ -142,7 +142,7 @@ func identityToken() *StoredUserToken {
 func TestRefreshIdentityOverwrites(t *testing.T) {
 	store := &memoryStore{token: identityToken()}
 	client := &fakeTokenClient{userInfoResult: &UserIdentity{OpenID: "ou_new", UserID: "u_new", Name: "新账号"}}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got, err := auth.RefreshIdentity(context.Background())
 	if err != nil {
@@ -162,7 +162,7 @@ func TestRefreshIdentityOverwrites(t *testing.T) {
 func TestRefreshIdentityFailureClears(t *testing.T) {
 	store := &memoryStore{token: identityToken()}
 	client := &fakeTokenClient{userInfoErr: errors.New("boom")}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	if _, err := auth.RefreshIdentity(context.Background()); err == nil {
 		t.Fatal("want error")
@@ -177,7 +177,7 @@ func TestRefreshIdentityFailureClears(t *testing.T) {
 
 func TestUserIdentityFromStore(t *testing.T) {
 	client := &fakeTokenClient{}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: identityToken()}, client, nowMs)
+	auth := newTestAuth(&memoryStore{token: identityToken()}, client, nowMs)
 
 	got := auth.UserIdentity(context.Background())
 	if got == nil || got.UserID != "u_old" || got.Name != "旧账号" {
@@ -191,7 +191,7 @@ func TestUserIdentityFromStore(t *testing.T) {
 func TestUserIdentityLazyBackfill(t *testing.T) {
 	store := &memoryStore{token: validToken()}
 	client := &fakeTokenClient{userInfoResult: &UserIdentity{OpenID: "ou_1", UserID: "u_1", Name: "张三"}}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got := auth.UserIdentity(context.Background())
 	if got == nil || got.UserID != "u_1" {
@@ -218,7 +218,7 @@ func TestUserIdentityBackfillAfterRefreshKeepsNewToken(t *testing.T) {
 		},
 		userInfoResult: &UserIdentity{OpenID: "ou_1", UserID: "u_1", Name: "张三"},
 	}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	got := auth.UserIdentity(context.Background())
 	if got == nil || got.UserID != "u_1" {
@@ -234,7 +234,7 @@ func TestUserIdentityBackfillAfterRefreshKeepsNewToken(t *testing.T) {
 
 func TestUserIdentityBackfillFailure(t *testing.T) {
 	client := &fakeTokenClient{userInfoErr: errors.New("boom")}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: validToken()}, client, nowMs)
+	auth := newTestAuth(&memoryStore{token: validToken()}, client, nowMs)
 
 	if got := auth.UserIdentity(context.Background()); got != nil {
 		t.Errorf("backfill 失败应返回 nil, got %+v", got)
@@ -243,7 +243,7 @@ func TestUserIdentityBackfillFailure(t *testing.T) {
 
 func TestUserIdentityNoToken(t *testing.T) {
 	client := &fakeTokenClient{}
-	auth := newTestAuth(AuthModeAuto, &memoryStore{}, client, nowMs)
+	auth := newTestAuth(&memoryStore{}, client, nowMs)
 
 	if got := auth.UserIdentity(context.Background()); got != nil {
 		t.Errorf("无凭证应返回 nil, got %+v", got)
@@ -261,7 +261,7 @@ func TestRefreshPreservesIdentity(t *testing.T) {
 		refreshResult: &UserTokenResult{AccessToken: "new-access", AccessExpiresInSec: 7200,
 			RefreshToken: "new-refresh", RefreshExpiresInSec: 30 * 24 * 3600},
 	}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	if got := auth.UserAccessToken(context.Background()); got != "new-access" {
 		t.Fatalf("got %q, want new-access", got)
@@ -279,7 +279,7 @@ func TestForceRefreshRollsWindowEvenWhenAccessValid(t *testing.T) {
 			RefreshToken: "new-refresh", RefreshExpiresInSec: 7 * 24 * 3600,
 		},
 	}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	stored, err := auth.ForceRefresh(context.Background())
 	if err != nil {
@@ -300,7 +300,7 @@ func TestForceRefreshFailureKeepsStore(t *testing.T) {
 	orig := validToken()
 	store := &memoryStore{token: orig}
 	client := &fakeTokenClient{refreshErr: errors.New("http 400")}
-	auth := newTestAuth(AuthModeAuto, store, client, nowMs)
+	auth := newTestAuth(store, client, nowMs)
 
 	if _, err := auth.ForceRefresh(context.Background()); err == nil {
 		t.Fatal("刷新失败应返回错误")
@@ -312,7 +312,7 @@ func TestForceRefreshFailureKeepsStore(t *testing.T) {
 
 func TestPersistKeepsRefreshFieldsWhenResponseOmitsThem(t *testing.T) {
 	store := &memoryStore{}
-	auth := newTestAuth(AuthModeAuto, store, &fakeTokenClient{}, nowMs)
+	auth := newTestAuth(store, &fakeTokenClient{}, nowMs)
 	prev := &StoredUserToken{
 		RefreshToken:    "old-refresh",
 		RefreshExpireAt: nowMs + 86400_000,
@@ -329,48 +329,14 @@ func TestPersistKeepsRefreshFieldsWhenResponseOmitsThem(t *testing.T) {
 }
 
 func TestCalendarAuthOptions(t *testing.T) {
-	// auto + 有效用户凭证 → 用户身份（一个 option）
-	auth := newTestAuth(AuthModeAuto, &memoryStore{token: validToken()}, &fakeTokenClient{}, nowMs)
+	auth := newTestAuth(&memoryStore{token: validToken()}, &fakeTokenClient{}, nowMs)
 	opts, err := auth.CalendarAuthOptions(context.Background())
 	if err != nil || len(opts) != 1 {
-		t.Errorf("auto with valid token: opts=%d err=%v, want 1 option", len(opts), err)
+		t.Errorf("valid token: opts=%d err=%v, want 1 option", len(opts), err)
 	}
 
-	// auto + 无凭证 → 应用身份（空 options）
-	auth = newTestAuth(AuthModeAuto, &memoryStore{}, &fakeTokenClient{}, nowMs)
-	opts, err = auth.CalendarAuthOptions(context.Background())
-	if err != nil || len(opts) != 0 {
-		t.Errorf("auto without token: opts=%d err=%v, want 0 options", len(opts), err)
-	}
-
-	// user + 无凭证 → 报错
-	auth = newTestAuth(AuthModeUser, &memoryStore{}, &fakeTokenClient{}, nowMs)
-	if _, err = auth.CalendarAuthOptions(context.Background()); err == nil {
-		t.Error("user mode without token should error")
-	}
-
-	// tenant → 不触用户凭证，应用身份
-	client := &fakeTokenClient{}
-	auth = newTestAuth(AuthModeTenant, &memoryStore{token: validToken()}, client, nowMs)
-	opts, err = auth.CalendarAuthOptions(context.Background())
-	if err != nil || len(opts) != 0 {
-		t.Errorf("tenant mode: opts=%d err=%v, want 0 options", len(opts), err)
-	}
-}
-
-// 进程内一次决策：第一次决策后即使凭证状态变化也不再改变身份。
-func TestCalendarAuthOptionsDecidedOnce(t *testing.T) {
-	store := &memoryStore{}
-	auth := newTestAuth(AuthModeAuto, store, &fakeTokenClient{}, nowMs)
-
-	opts, _ := auth.CalendarAuthOptions(context.Background())
-	if len(opts) != 0 {
-		t.Fatal("first decision should be tenant fallback")
-	}
-
-	store.token = validToken()
-	opts, _ = auth.CalendarAuthOptions(context.Background())
-	if len(opts) != 0 {
-		t.Error("decision should be cached per process, not re-evaluated")
+	auth = newTestAuth(&memoryStore{}, &fakeTokenClient{}, nowMs)
+	if _, err = auth.CalendarAuthOptions(context.Background()); err == nil || !strings.Contains(err.Error(), "room login") {
+		t.Errorf("without token: err=%v, want error guiding to room login", err)
 	}
 }

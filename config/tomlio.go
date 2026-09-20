@@ -96,7 +96,7 @@ func canonicalFromTOML(it Item, v any) (string, error) {
 		case string:
 			return arr, nil // 宽容:手写成逗号分隔字符串也接受
 		}
-	default: // TypeString / TypeEnum
+	default: // TypeString
 		if s, ok := v.(string); ok {
 			return s, nil
 		}

@@ -14,7 +14,6 @@ func TestWriteReadRoundtrip(t *testing.T) {
 	doc.Values = map[string]string{
 		"FEISHU_APP_ID":     "cli_x",
 		"FEISHU_APP_SECRET": `pa$s"word\x`,
-		"FEISHU_AUTH_MODE":  "user",
 		"ROOM_LIST":         "会议室A,会议室B",
 		"ROOM_SIZE":         "15",
 		"SENTRY_DSN":        "", // 显式空必须往返保留

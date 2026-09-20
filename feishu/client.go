@@ -23,7 +23,6 @@ func ptr[T any](v T) *T { return &v }
 type Config struct {
 	AppID         string
 	AppSecret     string
-	AuthMode      AuthMode
 	UserTokenPath string
 	Debug         bool
 }
@@ -72,12 +71,7 @@ func NewAPI(cfg Config, httpClient *http.Client, log *slog.Logger, clock func() 
 	}
 	client := lark.NewClient(cfg.AppID, cfg.AppSecret, opts...)
 
-	mode := cfg.AuthMode
-	if mode == "" {
-		mode = AuthModeAuto
-	}
 	auth := &Auth{
-		Mode:        mode,
 		TokenClient: &OAuthClient{HTTP: httpClient, AppID: cfg.AppID, AppSecret: cfg.AppSecret},
 		Store:       &FileUserTokenStore{Path: cfg.UserTokenPath},
 		Clock:       clock,
@@ -97,12 +91,16 @@ func NewAPI(cfg Config, httpClient *http.Client, log *slog.Logger, clock func() 
 // Auth 暴露鉴权管理器（login 命令编排使用）。
 func (a *API) Auth() *Auth { return a.auth }
 
-// CurrentUser 当前授权用户身份；无用户凭证或身份不可得时返回 nil（应用身份预订）。
+// CurrentUser 当前授权用户身份；身份不可得时返回 nil。
 func (a *API) CurrentUser(ctx context.Context) *UserIdentity { return a.auth.UserIdentity(ctx) }
 
-// VerifyCredentials 校验应用凭据（tenant_access_token 可获取）。
+// VerifyCredentials 校验应用凭据（tenant_access_token 可获取）与用户凭证（日历操作所需）。
 func (a *API) VerifyCredentials(ctx context.Context) error {
-	return a.auth.TokenClient.VerifyTenantCredentials(ctx)
+	if err := a.auth.TokenClient.VerifyTenantCredentials(ctx); err != nil {
+		return fmt.Errorf("应用凭据校验失败，请检查 App ID 和 App Secret: %w", err)
+	}
+	_, err := a.auth.CalendarAuthOptions(ctx)
+	return err
 }
 
 func (a *API) SearchRooms(ctx context.Context) ([]Room, error) {

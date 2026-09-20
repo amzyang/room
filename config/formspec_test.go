@@ -60,7 +60,6 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 		env  string
 		kind FieldKind
 	}{
-		{"FEISHU_AUTH_MODE", FieldSelect},
 		{"TASK_FORMAT", FieldText},
 		{"FEISHU_APP_ID", FieldInput},
 		{"FEISHU_APP_SECRET", FieldInput},
@@ -75,9 +74,6 @@ func TestBuildFormSpecFieldKinds(t *testing.T) {
 	}
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Masked {
 		t.Error("app_id 不应掩码")
-	}
-	if f := findField(t, groups, "FEISHU_AUTH_MODE"); len(f.Options) != 3 || f.Options[0] != (Option{Label: "auto", Value: "auto"}) {
-		t.Errorf("auth_mode 选项应为 label==value 的枚举 = %v", f.Options)
 	}
 }
 
@@ -112,10 +108,6 @@ func TestBuildFormSpecInitial(t *testing.T) {
 	groups := BuildFormSpec(map[string]string{"FEISHU_APP_ID": "cli_x"}, nil, nil)
 	if f := findField(t, groups, "FEISHU_APP_ID"); f.Initial != "cli_x" {
 		t.Errorf("app_id Initial = %q", f.Initial)
-	}
-	// 生效值缺失时 Select 回退默认,保证控件有合法初值
-	if f := findField(t, groups, "FEISHU_AUTH_MODE"); f.Initial != "auto" {
-		t.Errorf("auth_mode Initial = %q, want auto", f.Initial)
 	}
 }
 

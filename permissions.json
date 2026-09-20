@@ -1,12 +1,6 @@
 {
   "scopes": {
     "tenant": [
-      "calendar:calendar",
-      "calendar:calendar:readonly",
-      "calendar:calendar:read",
-      "calendar:calendar.event:create",
-      "calendar:calendar.event:read",
-      "calendar:calendar.event:delete",
       "calendar:calendar.free_busy:read",
       "vc:room:readonly",
       "vc:reserve:readonly",

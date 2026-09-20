@@ -55,7 +55,6 @@ func (a *app) newFeishuAPI(httpClient *http.Client) *feishu.API {
 	return feishu.NewAPI(feishu.Config{
 		AppID:         env("FEISHU_APP_ID"),
 		AppSecret:     env("FEISHU_APP_SECRET"),
-		AuthMode:      feishu.AuthMode(env("FEISHU_AUTH_MODE")),
 		UserTokenPath: userTokenPath(),
 		Debug:         a.debug,
 	}, httpClient, a.log, a.now, a.loc)

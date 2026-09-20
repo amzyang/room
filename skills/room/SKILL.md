@@ -100,7 +100,8 @@ room book -d 07-15 -t 14:00-15:00 --title 架构评审 -p "alice bob" --json
 - 失败（exit 1）按 `error.type` 处置：
   - `no_room`：该时段无可用会议室 → 换时段重试，或建议用户调整
     `booking.room_list` / `booking.room_size` / `booking.room_level_id`。
-  - `conflict`：用户日历该时段已有日程 → `room list --json` 查看后换时间。
+  - `conflict`：该时段已有用户本人组织或本工具订过的日程（他人组织、把用户
+    拉进去的日程不算）→ `room list --mine --json` 查看后换时间。
   - `holiday_skipped`：目标日期是节假日 → 换非节假日日期。
   - `no_participants`：无有效参会人（未 `room login` 且 `-p` 为空或全部解析失败，
     `detail.participants_unresolved` 列出失败项）→ 让用户 `room login`，或补

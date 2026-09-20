@@ -131,22 +131,51 @@ func TestBookRoomHolidaySkipped(t *testing.T) {
 	}
 }
 
-func TestBookRoomConflict(t *testing.T) {
+// 时段占用判定矩阵：本人组织、或本工具订过（应用身份创建的日程 organizer 是应用日历
+// 而非本人，靠 AutoCache 补认）的日程算占用；他人组织、把本人拉进去的不算，会议室本身
+// 是否空闲由 GetRoomFreeBusy 独立判定。本工具订过、之后被人取消的时段仍算占用，
+// 避免在被人为取消的时段反复重订。
+func TestBookRoomOverlapOccupancy(t *testing.T) {
 	loc, _ := time.LoadLocation("Asia/Shanghai")
-	overlap := feishu.CalendarEvent{
-		EventID:        "evt_other",
-		Summary:        "已有会议",
-		StartTimestamp: time.Date(2026, 7, 15, 14, 30, 0, 0, loc).Unix(),
-		EndTimestamp:   time.Date(2026, 7, 15, 15, 30, 0, 0, loc).Unix(),
+	overlap := func(eventID, organizerCalendarID, status string) feishu.CalendarEvent {
+		return feishu.CalendarEvent{
+			EventID:             eventID,
+			Summary:             "已有会议",
+			Status:              status,
+			OrganizerCalendarID: organizerCalendarID,
+			StartTimestamp:      time.Date(2026, 7, 15, 14, 30, 0, 0, loc).Unix(),
+			EndTimestamp:        time.Date(2026, 7, 15, 15, 30, 0, 0, loc).Unix(),
+		}
 	}
-	s := newTestService(t, &fakeAPI{events: []feishu.CalendarEvent{overlap}})
+	tests := []struct {
+		name       string
+		event      feishu.CalendarEvent
+		autoBooked bool
+		want       BookStatus
+	}{
+		{"本人组织", overlap("evt_mine", "cal_me", ""), false, StatusConflict},
+		{"他人组织", overlap("evt_other", "cal_other", ""), false, StatusBooked},
+		{"应用身份代订", overlap("evt_auto", "cal_app", ""), true, StatusConflict},
+		{"代订后被取消", overlap("evt_auto", "cal_app", "cancelled"), true, StatusConflict},
+	}
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != StatusConflict {
-		t.Errorf("Status = %s, want conflict", got.Status)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := bookableAPI()
+			api.events = []feishu.CalendarEvent{tt.event}
+			s := newTestService(t, api)
+			if tt.autoBooked {
+				s.AutoCache.Add(tt.event.EventID)
+			}
+
+			got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != tt.want {
+				t.Errorf("Status = %s, want %s", got.Status, tt.want)
+			}
+		})
 	}
 }
 

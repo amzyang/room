@@ -1096,8 +1096,8 @@ func (a *app) emitBookResult(w io.Writer, r *booking.BookResult) error {
 		return output.Errf(output.TypeHolidaySkipped, "更换非节假日日期重试",
 			"%s 为节假日，按策略跳过预订", r.Date).WithDetail(timeDetail)
 	case booking.StatusConflict:
-		return output.Errf(output.TypeConflict, "运行 room list --json 查看已有日程后更换时间",
-			"时间段已有日历事件重叠: %s %s-%s", r.Date, r.StartTime, r.EndTime).WithDetail(timeDetail)
+		return output.Errf(output.TypeConflict, "运行 room list --mine --json 查看本人日程后更换时间",
+			"时间段已有本人日程重叠: %s %s-%s", r.Date, r.StartTime, r.EndTime).WithDetail(timeDetail)
 	case booking.StatusNoRoom:
 		return output.Errf(output.TypeNoRoom,
 			"更换时间段重试，或调整 booking.room_list / booking.room_size / booking.room_level_id 配置",

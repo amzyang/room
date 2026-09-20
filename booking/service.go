@@ -294,8 +294,12 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 	if err != nil {
 		return nil, err
 	}
+	myCalendarID, err := s.API.GetPrimaryCalendar(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	if s.hasOverlapEvent(existingEvents, startDateTime, endDateTime, dateStr, startTime, endTime) {
+	if s.hasOverlapEvent(existingEvents, myCalendarID, startDateTime, endDateTime, dateStr, startTime, endTime) {
 		s.Log.Warn(fmt.Sprintf("跳过已有日历事件的时间段: %s %s-%s", dateStr, startTime, endTime))
 		result.Status = StatusConflict
 		return result, nil
@@ -335,29 +339,37 @@ func (s *Service) BookRoom(ctx context.Context, date, startTime, endTime, title 
 	return result, nil
 }
 
-func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, start, end time.Time, dateStr, startTime, endTime string) bool {
+// hasOverlapEvent 判断时段是否已被本人占用。只有本人组织或本工具预订过的日程算占用：
+// 他人组织、把本人拉进去的日程不阻止预订，会议室本身是否空闲由 findAvailableRoom 独立判定。
+func (s *Service) hasOverlapEvent(events []feishu.CalendarEvent, myCalendarID string, start, end time.Time, dateStr, startTime, endTime string) bool {
 	for _, event := range events {
 		if event.StartTimestamp == 0 || event.EndTimestamp == 0 {
 			continue
 		}
-		eventStart := time.Unix(event.StartTimestamp, 0)
-		eventEnd := time.Unix(event.EndTimestamp, 0)
-
-		if event.Status == "cancelled" || event.Status == "deleted" {
-			// 本工具创建后被取消的会议仍视为占用，避免在被人为取消的时段反复重订
-			if event.EventID != "" && s.AutoCache.Has(event.EventID) &&
-				HasTimeOverlap(start, end, eventStart, eventEnd) {
-				s.Log.Info(fmt.Sprintf("发现已取消的自动预订会议，视为时间段占用: %s %s-%s eventId=%s",
-					dateStr, startTime, endTime, event.EventID))
-				return true
-			}
+		if !HasTimeOverlap(start, end, time.Unix(event.StartTimestamp, 0), time.Unix(event.EndTimestamp, 0)) {
 			continue
 		}
 
-		if HasTimeOverlap(start, end, eventStart, eventEnd) {
-			s.Log.Info(fmt.Sprintf("时间段已有日历事件重叠: %s %s-%s", dateStr, startTime, endTime))
+		// 应用身份创建的日程 organizer 是应用日历而非本人，由 AutoCache 补认
+		autoBooked := event.EventID != "" && s.AutoCache.Has(event.EventID)
+
+		if event.Status == "cancelled" || event.Status == "deleted" {
+			// 本工具创建后被取消的会议仍视为占用，避免在被人为取消的时段反复重订
+			if !autoBooked {
+				continue
+			}
+			s.Log.Info(fmt.Sprintf("发现已取消的自动预订会议，视为时间段占用: %s %s-%s eventId=%s",
+				dateStr, startTime, endTime, event.EventID))
 			return true
 		}
+
+		if !autoBooked && !IsOrganizedBy(event.OrganizerCalendarID, myCalendarID) {
+			s.Log.Debug(fmt.Sprintf("忽略他人组织的日历事件: %s", event.Summary))
+			continue
+		}
+
+		s.Log.Info(fmt.Sprintf("时间段已有日历事件重叠: %s %s-%s", dateStr, startTime, endTime))
+		return true
 	}
 	return false
 }

@@ -36,6 +36,7 @@ type fakeBookingSvc struct {
 	gotAutoDryRun                       bool
 	gotFrom, gotTo                      time.Time
 	gotMine                             bool
+	gotRebookCancelled                  bool
 }
 
 func (f *fakeBookingSvc) AutoBook(_ context.Context, dryRun bool) ([]booking.BookResult, error) {
@@ -57,9 +58,10 @@ func (f *fakeBookingSvc) CancelEvent(_ context.Context, eventID string) (*bookin
 	return f.outcome, f.cancelErr
 }
 
-func (f *fakeBookingSvc) BookRoom(_ context.Context, date, startTime, endTime, title string, participants []string) (*booking.BookResult, error) {
+func (f *fakeBookingSvc) BookRoom(_ context.Context, date, startTime, endTime, title string, participants []string, rebookCancelled bool) (*booking.BookResult, error) {
 	f.gotDate, f.gotStart, f.gotEnd, f.gotTitle = date, startTime, endTime, title
 	f.gotParticipants = participants
+	f.gotRebookCancelled = rebookCancelled
 	return f.result, f.bookErr
 }
 
@@ -101,6 +103,29 @@ func bookedResult() *booking.BookResult {
 		Room:    &booking.BookedRoom{ID: "omm_1", Name: "3F-A"},
 		Date:    "2026-07-15", StartTime: "14:00:00", EndTime: "15:00:00",
 		Title: "meeting", ParticipantsResolved: 0,
+	}
+}
+
+// 只有交互终端下的 book 允许重订「本工具订过后被取消」的时段。
+func TestBookRebookCancelledOnlyWhenInteractive(t *testing.T) {
+	args := []string{"-d", "2026-07-15", "-t", "14:00-15:00", "--title", "t", "-y"}
+
+	svc := &fakeBookingSvc{result: bookedResult()}
+	if _, err := execAppCmd(t, newAgentTestApp(t, svc, ""), newBookCmd, args...); err != nil {
+		t.Fatal(err)
+	}
+	if svc.gotRebookCancelled {
+		t.Error("非交互环境不应放开已取消时段")
+	}
+
+	svc = &fakeBookingSvc{result: bookedResult()}
+	a := newAgentTestApp(t, svc, "")
+	a.streams.InIsTerminal, a.streams.OutIsTerminal = true, true
+	if _, err := execAppCmd(t, a, newBookCmd, args...); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.gotRebookCancelled {
+		t.Error("交互环境应放开已取消时段")
 	}
 }
 

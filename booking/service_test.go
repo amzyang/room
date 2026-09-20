@@ -94,7 +94,7 @@ func TestBookRoomBooked(t *testing.T) {
 	}
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "周会", nil)
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "周会", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestBookRoomHolidaySkipped(t *testing.T) {
 	s := newTestService(t, &fakeAPI{})
 	s.holidays["2026-10-01"] = true
 
-	got, err := s.BookRoom(context.Background(), "2026-10-01", "14:00:00", "15:00:00", "t", nil)
+	got, err := s.BookRoom(context.Background(), "2026-10-01", "14:00:00", "15:00:00", "t", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestBookRoomOverlapOccupancy(t *testing.T) {
 				s.AutoCache.Add(tt.event.EventID)
 			}
 
-			got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+			got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -178,6 +178,29 @@ func TestBookRoomOverlapOccupancy(t *testing.T) {
 	}
 }
 
+// 交互式预订是用户的显式意图：本工具订过后被取消的时段可以重订。
+func TestBookRoomRebookCancelledSlot(t *testing.T) {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	api := bookableAPI()
+	api.events = []feishu.CalendarEvent{{
+		EventID:             "evt_auto",
+		Status:              "cancelled",
+		OrganizerCalendarID: "cal_me",
+		StartTimestamp:      time.Date(2026, 7, 15, 14, 30, 0, 0, loc).Unix(),
+		EndTimestamp:        time.Date(2026, 7, 15, 15, 30, 0, 0, loc).Unix(),
+	}}
+	s := newTestService(t, api)
+	s.AutoCache.Add("evt_auto")
+
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusBooked {
+		t.Errorf("Status = %s, want booked", got.Status)
+	}
+}
+
 func TestBookRoomNoRoom(t *testing.T) {
 	// 有房间但时段全忙 → no_room
 	s := newTestService(t, &fakeAPI{
@@ -185,7 +208,7 @@ func TestBookRoomNoRoom(t *testing.T) {
 		freeBusy: false,
 	})
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +226,7 @@ func TestBookRoomAPIErrorIsError(t *testing.T) {
 		bookErr:     boom,
 	})
 
-	_, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	_, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 	if !errors.Is(err, boom) {
 		t.Errorf("API 错误应向上传递: %v", err)
 	}
@@ -221,7 +244,7 @@ func TestBookRoomAppendsAuthorizedUser(t *testing.T) {
 	api := bookableAPI()
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +266,7 @@ func TestBookRoomSelfDeduplicated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"me"}); err != nil {
+	if _, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"me"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(api.bookedUserIDs) != 1 || api.bookedUserIDs[0] != "u_me" {
@@ -256,7 +279,7 @@ func TestBookRoomNoParticipantsAborts(t *testing.T) {
 	api.noCurrentUser = true
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +299,7 @@ func TestBookRoomAllUnresolvedAborts(t *testing.T) {
 	api.noCurrentUser = true
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"})
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +316,7 @@ func TestBookRoomGroupCountsAsHuman(t *testing.T) {
 	api.noCurrentUser = true
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"oc_g1"})
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"oc_g1"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +333,7 @@ func TestBookRoomOpenIDOnlyIdentityAborts(t *testing.T) {
 	api.currentUser = &feishu.UserIdentity{OpenID: "ou_me"} // 权限降级：无 user_id
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil)
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +346,7 @@ func TestBookRoomPartialResolveContinues(t *testing.T) {
 	api := bookableAPI()
 	s := newTestService(t, api)
 
-	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"})
+	got, err := s.BookRoom(context.Background(), "2026-07-15", "14:00:00", "15:00:00", "t", []string{"ghost"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -64,7 +64,7 @@ func (a *app) newFeishuAPI(httpClient *http.Client) *feishu.API {
 type bookingService interface {
 	ListEvents(ctx context.Context, from, to time.Time, organizedByMeOnly bool) ([]booking.EventSummary, error)
 	CancelEvent(ctx context.Context, eventID string) (*booking.CancelOutcome, error)
-	BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string) (*booking.BookResult, error)
+	BookRoom(ctx context.Context, date, startTime, endTime, title string, participants []string, rebookCancelled bool) (*booking.BookResult, error)
 	AutoBook(ctx context.Context, dryRun bool) ([]booking.BookResult, error)
 }
 

@@ -899,6 +899,7 @@ func newBookCmd(a *app) *cobra.Command {
   - exit 0 ⟺ 房间订上了；未订到 exit 1，错误 type 区分：
     no_room（无可用会议室）/ conflict（时段已有日程）/ holiday_skipped（节假日跳过）
     / no_participants（无有效参会人，运行 room login 或补 -p）
+  - 本工具订过后被取消的时段：终端交互环境下可重订；--json/非终端环境仍算 conflict
   - room login 的授权用户会自动加入参会人（无需在 -p 中重复）`,
 		Example: `  room book "明天下午3点 开发周会"
   room book -d 07-15 -t 14:00-15:00 -p "alice bob" --title 架构评审 --json
@@ -1064,7 +1065,7 @@ func newBookCmd(a *app) *cobra.Command {
 				return err
 			}
 
-			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, expandParticipants(participants))
+			result, err := service.BookRoom(ctx, dateToBook, startTime, endTime, title, expandParticipants(participants), p.interactive)
 			if err != nil {
 				return err
 			}

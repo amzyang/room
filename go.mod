@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	charm.land/huh/v2 v2.0.3
 	github.com/getsentry/sentry-go v0.50.0
-	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
+	github.com/larksuite/oapi-sdk-go/v3 v3.13.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
